@@ -110,6 +110,7 @@ export async function startTunnel(port) {
     }
   };
   me.stdout.on('data', onData); me.stderr.on('data', onData);
+  me.on('error', e => { if (child === me) { child = null; status.state = 'error'; status.error = 'cloudflared: ' + e.message; console.error('[link] cloudflared can\'t start:', e.message, WIN ? '' : '(Termux: pkg install cloudflared)'); setTimeout(() => { if (!child) startTunnel(port); }, 60000); } });
   // بس إذا النفق الحالي وقف لحالو منعيد تشغيله (مو القديم يلي سكّرناه نحنا)
   me.on('exit', code => { if (child === me) { child = null; console.error('[link] cloudflared stopped', code); status.state = 'restarting'; setTimeout(() => { if (!child) startTunnel(port); }, 10000); } });
 }
