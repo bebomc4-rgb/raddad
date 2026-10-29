@@ -12,7 +12,10 @@ echo "… عم فك الملف (كم دقيقة)"
 unzip -q -o "$ZIP" -d data 2>&1 | grep -v backslashes
 [ -f data/raddad.db ] || { [ -f data/data/raddad.db ] && mv data/data/* data/ && rmdir data/data; }
 if [ ! -f data/raddad.db ]; then echo "❌ الملف ما فيه raddad.db"; ls data; exit 1; fi
+# الموبايل احتياط: بيربط الواتس كجهاز لحالو (مو بنفس جلسة الكمبيوتر، وإلا بيتضاربوا)
+rm -rf data/wa-sessions
 echo "✓ البيانات جاهزة"
 bash ~/raddad/deploy/termux-start.sh
 echo
-echo "✅ خلص. استنى دقيقتين وافتح https://k-fast-ai.pages.dev وسجّل دخول بحسابك القديم"
+echo "✅ خلص. افتح http://127.0.0.1:3000 بالموبايل، سجّل دخول بحسابك، واربط واتس المتجر (QR) — بيصير جهاز مربوط تاني."
+echo "   الموبايل احتياط: بيرد بس لما يطفى الكمبيوتر، ولما يرجع الكمبيوتر بيسكت لحالو."

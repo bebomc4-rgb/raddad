@@ -20,7 +20,8 @@ import { bootAll } from './src/whatsapp/baileys.js';
 import { startBatchWorker } from './src/batch.js';
 import { startSubscriptionWorker } from './src/subscriptions.js';
 import { startAutoWorker } from './src/autofolder.js';
-import { startTunnel } from './src/tunnel.js';
+import { startTunnel, stopTunnel } from './src/tunnel.js';
+import { isActive, failoverStatus, startFailover, startPrimaryWatch } from './src/failover.js';
 import { getSetting } from './src/db.js';
 
 const PUBLIC = path.join(ROOT, 'public');
@@ -67,6 +68,9 @@ const server = http.createServer(async (req, res) => {
       const MB = await import('./src/messenger.js');
       return MB.handleExtension(req, res, pathname);
     }
+
+    // مين شغّال هلق (الكمبيوتر ولا الموبايل الاحتياط) — بيسألو الموبايل كل 30 ثانية
+    if (pathname === '/api/whoami') return json(res, 200, failoverStatus());
 
     // ===== API =====
     if (pathname.startsWith('/api/')) {
@@ -149,7 +153,10 @@ server.listen(config.port, config.host, () => {
   startBatchWorker();
   startSubscriptionWorker();
   startAutoWorker();
-  startTunnel(config.port).catch(e => console.error('[link]', e.message));
+  // الموبايل الاحتياط ما بيوجّه الرابط العام لعندو إلا لما يستلم (الكمبيوتر وقف)
+  if (isActive()) startTunnel(config.port).catch(e => console.error('[link]', e.message));
+  startFailover(on => on ? startTunnel(config.port).catch(e => console.error('[link]', e.message)) : stopTunnel());
+  startPrimaryWatch(() => startTunnel(config.port).catch(e => console.error('[link]', e.message)));
 });
 
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { console.log('إيقاف...'); server.close(); process.exit(0); });

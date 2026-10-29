@@ -11,6 +11,7 @@ import { sendToCustomer, saveContact, realName, setRealName, bookName } from './
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR } from './config.js';
+import { isActive } from './failover.js';
 import { koMenu, koMenuHint } from './ko-menu.js';
 import { similarExamples, learnFromLive } from './style.js';
 import { editImage, EDIT_WORDS } from './imageedit.js';
@@ -83,6 +84,7 @@ export function handleInbound(tenantId, { jid, phone, name, text, waId, fromMe =
   logMessage(tenantId, contact.id, { direction: 'in', sender: 'customer', body, media_url: mediaUrl, wa_id: waId });
   // تعديل الصور عالواتس ملغى نهائياً (صاحب المتجر طلب). الصور بتنعامل متل أي رسالة عادية
   if (false && isOwner(tenant, contact) && ownerImageCommand(tenant, contact, text, mediaUrl)) return;
+  if (!isActive()) return; // الموبايل الاحتياط: بيسجّل الرسالة بس، الكمبيوتر هوي يلي بيرد
   scheduleReply(tenant, contact.id);
 }
 
@@ -135,6 +137,7 @@ export function parseNumbers(text) {
 
 // هل البوت رح يرد على هالرقم؟ (لنعلّم الرسالة مقروءة ونحلّل الصوت والصور بس للأرقام يلي البوت بيرد عليها)
 export function botWillHandle(tenantId, { jid, phone }) {
+  if (!isActive()) return false;
   try {
     const tenant = getTenant(tenantId); if (!tenant) return false;
     const contact = q.get('SELECT * FROM contacts WHERE tenant_id = ? AND jid = ?', tenantId, jid) || { jid, phone, bot_paused_until: 0 };
@@ -466,7 +469,8 @@ ${products.map(p => '- ' + productForAI(p, k.currency)).join('\n') || '- لا ي
 ${cat.total > products.length ? '(هي جزء من المنتجات بس. إذا العميل طلب شي مو ظاهر هون، اسأله عن تفاصيل أكتر أو اذكر التصنيفات المتوفرة.)' : ''}
 
 ## العميل
-${kv('الاسم', contact?.name)}${kv('الرقم', contact?.phone)}${kv('ملاحظات سابقة', contact?.notes)}${prevOrders.length ? `- طلبات سابقة: ${prevOrders.map(o => `#${o.id} (${o.status})`).join('، ')}\n` : ''}${prevOrders[0] && (prevOrders[0].customer_name || prevOrders[0].address) ? `- معلوماتو من آخر طلب (لا ترجع تسألو عنها، بس أكّدها معو): الاسم ${prevOrders[0].customer_name || '-'}، الرقم ${prevOrders[0].customer_phone || '-'}، العنوان ${prevOrders[0].address || '-'}\n` : ''}
+${kv('الاسم', contact?.name)}${kv('الرقم', contact?.phone)}${kv('ملاحظات سابقة', contact?.notes)}${prevOrders.length ? `- طلبات سابقة: ${prevOrders.map(o => `#${o.id} (${o.status})`).join('، ')}\n` : ''}
+${prevOrders[0] && (prevOrders[0].customer_name || prevOrders[0].address) ? `- معلوماتو من آخر طلب (لا ترجع تسألو عنها، بس أكّدها معو): الاسم ${prevOrders[0].customer_name || '-'}، الرقم ${prevOrders[0].customer_phone || '-'}، العنوان ${prevOrders[0].address || '-'}\n` : ''}
 ## شكل الرد — أرجع JSON فقط بهالشكل بالضبط:
 {"reply":"نص الرسالة للعميل","images":[أرقام المنتجات يلي بدك تبعت صورها، أقصى ${s.send_images ? s.max_images : 0}],"order":null,"handoff":false,"customer_name":null,"customer_area":null,"note":null}
 - images: ${s.send_images ? 'ابعت صور فقط لما تقترح منتج لأول مرة أو العميل طلب يشوف. لا تكرر صور سبق انبعتت.' : 'دائماً [] (إرسال الصور مطفي).'}
@@ -758,6 +762,7 @@ export async function sendManual(tenant, contactId, text) {
 // ===== تذكيرات لصاحب المتجر (data/reminders.json) =====
 // [{ "date": "2027-01-16", "text": "…", "sent": false }] — بتوصل عالواتس لرقم المتجر بيومها (أو أول ما يشتغل البوت بعدها)
 async function remindersTick() {
+  if (!isActive()) return;
   const f = path.join(DATA_DIR, 'reminders.json');
   let list; try { list = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return; }
   const today = new Date().toISOString().slice(0, 10); let changed = false;

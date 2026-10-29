@@ -2,10 +2,12 @@
 import { q } from './db.js';
 import { getTenant } from './tenants.js';
 import { notifyOwner } from './agent.js';
+import { isActive } from './failover.js';
 
 const WARN_DAYS = 3;
 
 export function checkExpiring() {
+  if (!isActive()) return;
   const now = Math.floor(Date.now() / 1000);
   const rows = q.all(`SELECT id, plan_expires_at FROM tenants WHERE plan_id != 'free' AND status = 'active'
     AND plan_expires_at BETWEEN ? AND ? AND COALESCE(expiry_warned_for, 0) != plan_expires_at`, now, now + WARN_DAYS * 86400);

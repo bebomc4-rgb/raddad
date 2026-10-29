@@ -7,6 +7,7 @@ import { emit } from '../events.js';
 import { phoneFromJid } from '../text.js';
 import { getTenant } from '../tenants.js';
 import { trialStatus } from '../trial.js';
+import { isActive } from '../failover.js';
 
 const sessions = new Map(); // tenantId -> state
 let B = null;               // مكتبة Baileys (بتنحمّل وقت الحاجة)
@@ -473,7 +474,7 @@ function rememberHistory(tenantId, list) {
 const bookReady = (tenantId) => Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length >= 10;
 const isPlaceholder = (n) => /^زبون \d{4}$/.test(String(n || '').trim());
 export async function saveContact(tenantId, phone, name, force = false) {
-  if (Number(tenantId) !== KO_TENANT) return false;
+  if (Number(tenantId) !== KO_TENANT || !isActive()) return false;
   const s = sessions.get(tenantId), num = String(phone || '').replace(/\D/g, '');
   if (!s?.sock?.addOrEditContact || s.status !== 'open' || num.length < 8) return false;
   if (!bookReady(tenantId)) return false; // ما وصلت أسماءك من الواتس لهلق: ما منلمس شي
