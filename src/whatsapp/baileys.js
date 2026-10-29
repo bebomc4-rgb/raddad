@@ -71,7 +71,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
 
   const sock = makeWASocket({
     auth: state,
-    logger: silent,
+    logger: Number(tenantId) === KO_TENANT ? syncLogger : silent, // بس رسائل مزامنة جهات الاتصال (لنعرف ليش الواتس ما بيطبّق الحفظ)
     printQRInTerminal: false,
     markOnlineOnConnect: false,   // حتى يضل موبايلك يوصله إشعارات
     syncFullHistory: true,        // لما تربط من جديد: الواتس بيبعت كل المحادثات القديمة (مشان نحفظ كل الأرقام)
@@ -83,6 +83,23 @@ export async function start(tenantId, { pairPhone = null } = {}) {
   sock.ev.on('creds.update', saveCreds);
   sock.ev.on('contacts.upsert', (list) => noteContacts(tenantId, list));
   sock.ev.on('contacts.update', (list) => noteContacts(tenantId, (list || []).filter(c => c.name)));
+  // مراقبة ردّ الواتس على حفظ جهات الاتصال: Baileys ما بيفحص الخطأ يلي بيجي جوّا <collection>، فمنفحصو نحنا
+  sock.ws?.on?.('frame', (fr) => {
+    try {
+      if (fr?.tag !== 'iq' || !Array.isArray(fr.content)) return;
+      const sync = fr.content.find(c => c?.tag === 'sync'); if (!sync || !Array.isArray(sync.content)) return;
+      for (const col of sync.content) {
+        if (col?.tag !== 'collection' || col.attrs?.name !== 'critical_unblock_low') continue;
+        const kids = Array.isArray(col.content) ? col.content : [];
+        const err = kids.find(c => c?.tag === 'error');
+        if ((s.syncLog = (s.syncLog || 0) + 1) <= 15) console.log(`[wa] tenant ${tenantId}: contacts sync reply ${JSON.stringify(col.attrs)} [${kids.map(c => c?.tag).join(',')}]`);
+        if (col.attrs.type === 'error' || err) {
+          s.lastSyncErr = { code: err?.attrs?.code || '', text: err?.attrs?.text || 'error' };
+          console.error(`[wa] tenant ${tenantId}: WhatsApp REJECTED a contacts change: ${s.lastSyncErr.code} ${s.lastSyncErr.text}`);
+        }
+      }
+    } catch {}
+  });
 
   sock.ev.on('connection.update', async u => {
     if (s.stopped) return;
@@ -105,7 +122,11 @@ export async function start(tenantId, { pairPhone = null } = {}) {
       q.run("UPDATE tenants SET wa_phone = ?, wa_provider = 'qr' WHERE id = ?", phone, tenantId);
       console.log(`[wa] tenant ${tenantId} connected as ${phone}`);
       clearInterval(s.lidTimer); s.lidTimer = setInterval(() => resolveLids(tenantId).catch(() => {}), 15 * 60_000);
+      // كل 10 دقايق: أي رقم بقاعدة الزباين ما انحفظ بجهات الاتصال بيرجع ينضاف للطابور
+      clearInterval(s.saveTimer); s.saveTimer = setInterval(() => queueAllKnown(tenantId), 10 * 60_000);
       setTimeout(() => bookResync(tenantId, sock, state).catch(e => console.error('[wa] address book sync', e.message)), 20000); // منجيب أسماء جهات اتصالك كلها من الواتس
+      setTimeout(() => auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)), 45000); // فحص عند الطلب بس
+      clearInterval(s.auditTimer); s.auditTimer = setInterval(() => { auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)); resaveFromFile(tenantId); }, 30_000); // ملفات الطلب بتتفحص كل 30 ثانية
       setTimeout(() => queueAllKnown(tenantId), 90000); // بعد ما يخلص مزامنة الواتس، منحفظ كل الأرقام يلي راسلت قبل
       trialStatus(getTenant(tenantId)); // بيسجّل الرقم أو بيطلّع تنبيه للإدارة إذا استخدم التجربة
     }
@@ -193,7 +214,25 @@ export async function start(tenantId, { pairPhone = null } = {}) {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
+    if (type !== 'notify') {
+      // رسائل وصلت لما النت كان قاطع (append): البوت ما بيرد عليها، بس أرقامها لازم تنحفظ بجهات الاتصال
+      const found = [];
+      for (const m of messages || []) {
+        try {
+          const jid = m.key?.remoteJid || '';
+          if (!jid || /@g\.us$|@broadcast$|@newsletter$|^status@/.test(jid)) continue;
+          const alt = m.key.remoteJidAlt || m.key.senderPn || m.key.participantPn || null;
+          let ph = phoneFromJid(jid.endsWith('@s.whatsapp.net') ? jid : alt || '');
+          if (!ph && /@lid$/.test(jid)) {
+            try { const pn = await sock.signalRepository?.lidMapping?.getPNForLID?.(jid); if (pn && /@s\.whatsapp\.net$/.test(pn)) ph = phoneFromJid(pn); } catch {}
+            if (!ph) rememberLid(tenantId, jid);
+          }
+          if (ph) found.push({ phone: ph });
+        } catch {}
+      }
+      if (found.length) queueContacts(tenantId, found);
+      return;
+    }
     const { handleInbound, isBotSent, botWillHandle } = await import('../agent.js');
     for (const m of messages) {
       try {
@@ -202,9 +241,15 @@ export async function start(tenantId, { pairPhone = null } = {}) {
         if (!m.message) { if (m.messageStubType) console.log(`[wa] tenant ${tenantId}: could not decrypt a message from ${jid} (WhatsApp will resend it)`); continue; }
         if (m.key.fromMe && isBotSent(m.key.id)) continue;
         let { text, mediaNote, quote } = extract(m.message, !m.key.fromMe);
-        if (!text && !mediaNote) continue;
         const alt = m.key.remoteJidAlt || m.key.senderPn || m.key.participantPn || null;
-        const phone = phoneFromJid(jid.endsWith('@s.whatsapp.net') ? jid : alt || '');
+        let phone = phoneFromJid(jid.endsWith('@s.whatsapp.net') ? jid : alt || '');
+        // رسالة جاية بمعرّف @lid وما وصل معا رقم: منحاول نحوّلو لرقم هون، وإذا ما قدرنا منحطّو بقائمة الانتظار لـ resolveLids
+        if (!phone && /@lid$/.test(jid)) {
+          try { const pn = await sock.signalRepository?.lidMapping?.getPNForLID?.(jid); if (pn && /@s\.whatsapp\.net$/.test(pn)) phone = phoneFromJid(pn); } catch {}
+          if (!phone) rememberLid(tenantId, jid);
+        }
+        // تفاعل (❤️👍) أو رسالة فاضية: البوت ما بيرد عليها، بس الرقم لازم ينحفظ
+        if (!text && !mediaNote) { if (phone) saveContact(tenantId, phone, '').catch(() => {}); continue; }
         // بس الأرقام يلي البوت رح يرد عليها: منعلّمها مقروءة ومنحلّل صوتها وصورها. الباقي بيضل متل ما هو (مو مقروء) لترد إنت
         const mine = !m.key.fromMe && botWillHandle(tenantId, { jid, phone });
         if (mine) sock.readMessages([m.key]).catch(() => {});
@@ -222,6 +267,8 @@ export async function start(tenantId, { pairPhone = null } = {}) {
           if (now !== before) { keepNames(); console.log(`[wa] tenant ${tenantId}: name for ${phone}: «${now}»`); }
           (now && now !== before ? saveContact(tenantId, phone, now, true) : saveContact(tenantId, phone, '')).catch(() => {});
         }
+        // إنت يلي بعتت أول (من الموبايل): الرقم لازم ينحفظ كمان
+        if (m.key.fromMe && phone) saveContact(tenantId, phone, '').catch(() => {});
         console.log(`[wa] tenant ${tenantId}: ${m.key.fromMe ? 'you replied to' : 'message from'} ${phone || jid}: ${(text || mediaNote || '').slice(0, 60).replace(/\n/g, ' ')}`);
         handleInbound(tenantId, { jid, phone, name: m.pushName || null, text, mediaNote, mediaUrl, waId: m.key.id, fromMe: !!m.key.fromMe });
       } catch (e) { console.error('[wa] inbound', e.message); }
@@ -364,6 +411,18 @@ export async function setRealName(tenantId, phone, name, area = '') {
 // بيوصل من الواتس مع كل ربط. أي رقم إلو اسم محفوظ ما منقرّبلو أبداً، إلا إذا الاسم «زبون XXXX» يلي نحنا حطيناه
 const BOOK_FILE = path.join(DATA_DIR, 'wa-addressbook.json');
 let book = {}; try { book = JSON.parse(fs.readFileSync(BOOK_FILE, 'utf8')); } catch {}
+// دمج لمرة وحدة: إذا في ملف wa-contacts-merge.json منضيف يلي ناقص منو للمحفوظ ولدفتر العناوين (ما منغيّر شي موجود) ومنعلّمو خلص
+try {
+  const MF = path.join(DATA_DIR, 'wa-contacts-merge.json');
+  if (fs.existsSync(MF)) {
+    const mg = JSON.parse(fs.readFileSync(MF, 'utf8')); let a = 0, b = 0;
+    for (const [k, v] of Object.entries(mg.saved || {})) if (!saved[k]) { saved[k] = v; a++; }
+    for (const [k, v] of Object.entries(mg.book || {})) if (!book[k]) { book[k] = v; b++; }
+    fs.writeFileSync(SAVED_FILE, JSON.stringify(saved)); fs.writeFileSync(BOOK_FILE, JSON.stringify(book));
+    fs.renameSync(MF, MF + '.done');
+    console.log(`[wa] merged contacts: ${a} saved, ${b} address book`);
+  }
+} catch (e) { console.error('[wa] merge contacts', e.message); }
 let bookT = null, bookSeen = 0;
 export function noteContacts(tenantId, list) {
   let n = 0;
@@ -473,6 +532,90 @@ function rememberHistory(tenantId, list) {
 }
 const bookReady = (tenantId) => Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length >= 10;
 const isPlaceholder = (n) => /^زبون \d{4}$/.test(String(n || '').trim());
+// سجل Baileys بس للرسائل يلي إلها علاقة بمزامنة جهات الاتصال (بحد أقصى 400 سطر لكل تشغيل)
+let syncLogN = 0;
+const SYNC_KW = /sync|app.?state|snapshot|critical_unblock_low|missing key|blocked|patch/i;
+const syncLogFn = (lvl) => (o, m) => {
+  try {
+    const msg = typeof o === 'string' ? o : String(m || '');
+    let extra = '';
+    if (o && typeof o === 'object') extra = JSON.stringify(o, (k, v) => (k === 'error' && typeof v === 'string') ? v.split('\n').slice(0, 3).join(' | ') : (v && typeof v === 'object' && (v.type === 'Buffer' || v instanceof Uint8Array)) ? '[buf]' : v).slice(0, 700);
+    const mk = /failed to find key \\?"([A-Za-z0-9+/=]+)\\?"/.exec(extra + ' ' + msg); if (mk) onMissingKey(mk[1]); // دايماً، حتى لو السجل وقف
+    if (!SYNC_KW.test(msg + ' ' + extra) || /^(resyncing |synced |.*has more patches)/.test(msg)) return; // الرسائل الروتينية ما منكتبها
+    if (syncLogN >= 400) return;
+    syncLogN++; console.log(`[baileys:${lvl}] ${msg} ${extra}`);
+  } catch {}
+};
+const syncLogger = { level: 'info', trace() {}, debug() {}, info: syncLogFn('info'), warn: syncLogFn('warn'), error: syncLogFn('error'), fatal: syncLogFn('fatal'), child() { return syncLogger; } };
+// مفتاح مزامنة ناقص: البوت ما معو المفتاح يلي الموبايل عم يشفّر فيه جهات الاتصال، فكل حفظ من البوت بينبني على نسخة غلط والموبايل بيتجاهلو.
+// منطلب المفتاح من الموبايل متل ما بيعمل واتساب ويب (Baileys ما فيه هالشي)
+const keyAsked = new Map();
+function onMissingKey(keyId) {
+  const t = keyAsked.get(keyId) || 0; if (Date.now() - t < 10 * 60_000) return; keyAsked.set(keyId, Date.now());
+  console.error(`[wa] contacts-sync key ${keyId} is missing on the bot — asking your phone for it`);
+  setTimeout(() => requestAppStateKeys(KO_TENANT, [keyId]).catch(e => console.error('[wa] key request', e.message)), 3000);
+}
+export async function requestAppStateKeys(tenantId, ids) {
+  const s = sessions.get(tenantId), sock = s?.sock; if (!sock?.relayMessage || s.status !== 'open') return false;
+  const m = await import('baileys'); const proto = m.proto ?? m.default?.proto; const norm = m.jidNormalizedUser ?? m.default?.jidNormalizedUser;
+  const T = proto?.Message?.ProtocolMessage?.Type?.APP_STATE_SYNC_KEY_REQUEST;
+  if (T === undefined) { console.error('[wa] key request: this Baileys has no APP_STATE_SYNC_KEY_REQUEST'); return false; }
+  const me = norm ? norm(sock.authState.creds.me.id) : phoneFromJid(sock.authState.creds.me.id) + '@s.whatsapp.net';
+  await sock.relayMessage(me, { protocolMessage: { type: T, appStateSyncKeyRequest: { keyIds: ids.map(k => ({ keyId: Buffer.from(k, 'base64') })) } } },
+    { additionalAttributes: { category: 'peer', push_priority: 'high_force' }, additionalNodes: [{ tag: 'meta', attrs: { appdata: 'default' } }] });
+  console.log(`[wa] tenant ${tenantId}: asked your phone for the missing contacts-sync key ${ids.join(', ')}`);
+  return true;
+}
+// إذا الواتس رفض تغيير: منرجّع نسخة جهات الاتصال من الواتس من الصفر (مرة كل 5 دقايق بالأكتر) لتتصلّح نسخة البوت
+let fixAt = 0;
+async function fixContactsState(tenantId) {
+  const s = sessions.get(tenantId); if (!s?.sock?.resyncAppState || Date.now() - fixAt < 5 * 60_000) return; fixAt = Date.now();
+  console.log(`[wa] tenant ${tenantId}: re-syncing contacts state from WhatsApp after a rejection`);
+  await s.sock.authState.keys.set({ 'app-state-sync-version': { critical_unblock_low: null } });
+  await s.sock.resyncAppState(['critical_unblock_low'], true);
+  console.log(`[wa] tenant ${tenantId}: contacts state re-synced`);
+}
+// فحص: شو موجود فعلاً عند الواتس من جهات الاتصال. بيشتغل مرة وحدة بس إذا في ملف data/contacts-audit-request.txt
+// إعادة حفظ أرقام معيّنة: إذا في ملف data/contacts-resave.txt (رقم بكل سطر) منعيد حفظهم بالدور. الأسماء يلي إنت حاططها ما منلمسها
+function resaveFromFile(tenantId) {
+  const f = path.join(DATA_DIR, 'contacts-resave.txt'); if (Number(tenantId) !== KO_TENANT || !fs.existsSync(f)) return;
+  let nums = []; try { nums = fs.readFileSync(f, 'utf8').split(/\s+/).map(x => x.replace(/\D/g, '')).filter(x => x.length >= 8); fs.unlinkSync(f); } catch { return; }
+  let n = 0;
+  for (const num of nums) { const k = tenantId + ':' + num, bk = book[k], sv = saved[k]; if (bk && !isPlaceholder(bk) && bk !== sv) continue; delete saved[k]; delete book[k]; n++; }
+  console.log(`[wa] tenant ${tenantId}: re-saving ${n} numbers from contacts-resave.txt`);
+  queueContacts(tenantId, nums.map(p => ({ phone: p })));
+}
+let auditing = false;
+async function auditContacts(tenantId) {
+  const req = path.join(DATA_DIR, 'contacts-audit-request.txt'); if (auditing || Number(tenantId) !== KO_TENANT || !fs.existsSync(req)) return;
+  auditing = true; try { await auditContactsRun(tenantId, req); } finally { auditing = false; }
+}
+async function auditContactsRun(tenantId, req) {
+  try { fs.unlinkSync(req); } catch {}
+  const s = sessions.get(tenantId); if (!s?.sock?.resyncAppState) return;
+  const cap = new Map(); const h = (list) => { for (const c of list || []) if (c?.id) cap.set(c.id, c); };
+  s.sock.ev.on('contacts.upsert', h);
+  console.log(`[wa] tenant ${tenantId}: audit — downloading all contacts from WhatsApp…`);
+  try {
+    await s.sock.authState.keys.set({ 'app-state-sync-version': { critical_unblock_low: null } });
+    await s.sock.resyncAppState(['critical_unblock_low'], true);
+    await new Promise(r => setTimeout(r, 8000));
+  } finally { s.sock.ev.off('contacts.upsert', h); }
+  const onServer = new Map(); let lidIdx = 0, pnIdx = 0, withLid = 0, withPn = 0; const lidExamples = [];
+  for (const [id, c] of cap) {
+    if (/@lid$/.test(id)) { lidIdx++; if (lidExamples.length < 5) lidExamples.push(c); } else if (/@s\.whatsapp\.net$/.test(id)) pnIdx++;
+    if (c.lid) withLid++; if (c.phoneNumber) withPn++;
+    const pn = /@s\.whatsapp\.net$/.test(id) ? id : String(c.phoneNumber || '');
+    const num = pn.split('@')[0].split(':')[0].replace(/\D/g, ''); if (num) onServer.set(num, c.name || '');
+  }
+  const mine = Object.entries(saved).filter(([k]) => k.startsWith(tenantId + ':')).map(([k, v]) => [k.slice(String(tenantId).length + 1), v]);
+  const missing = mine.filter(([n]) => !onServer.has(n)).map(([n]) => n);
+  const placeholdersOnServer = [...onServer.values()].filter(isPlaceholder).length;
+  const sample = {}; for (const n of ['963968003483', '963935752989', '963932096770', '963995227855']) sample[n] = onServer.has(n) ? onServer.get(n) : null;
+  const out = { at: new Date().toISOString(), serverContacts: cap.size, pnIndexed: pnIdx, lidIndexed: lidIdx, withLid, withPn, placeholdersOnServer, botSaved: mine.length, botSavedMissingOnServer: missing.length, sample, lidExamples, missing };
+  fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit.json'), JSON.stringify(out, null, 1));
+  console.log(`[wa] tenant ${tenantId}: audit — WhatsApp has ${cap.size} contacts (pn ${pnIdx}, lid ${lidIdx}); bot saved ${mine.length}, missing on WhatsApp ${missing.length}`);
+}
 export async function saveContact(tenantId, phone, name, force = false) {
   if (Number(tenantId) !== KO_TENANT || !isActive()) return false;
   const s = sessions.get(tenantId), num = String(phone || '').replace(/\D/g, '');
@@ -490,10 +633,11 @@ export async function saveContact(tenantId, phone, name, force = false) {
     if (isPlaceholder(have) && !real) return true;
   }
   const full = real || ('زبون ' + num.slice(-4));
-  if (!have && saved[key] && saved[key] === full) return true;
   try {
+    s.lastSyncErr = null;
     await s.sock.addOrEditContact(num + '@s.whatsapp.net', { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true });
-    saved[key] = full; book[key] = full; clearTimeout(savedT); savedT = setTimeout(() => { try { fs.writeFileSync(SAVED_FILE, JSON.stringify(saved)); fs.writeFileSync(BOOK_FILE, JSON.stringify(book)); } catch {} }, 1500);
+    if (s.lastSyncErr) { const e = s.lastSyncErr; s.lastSyncErr = null; fixContactsState(tenantId).catch(() => {}); throw new Error(`WhatsApp rejected it (${e.code} ${e.text})`); }
+    saved[key] = full; book[key] = full; for (const mm of bulk.values()) mm.delete(num); /* انحفظ: منشيلو من الطابور */ clearTimeout(savedT); savedT = setTimeout(() => { try { fs.writeFileSync(SAVED_FILE, JSON.stringify(saved)); fs.writeFileSync(BOOK_FILE, JSON.stringify(book)); } catch {} }, 1500);
     console.log(`[wa] tenant ${tenantId}: contact ${num} ${have ? `«${have}» → ` : 'new → '}«${full}»`);
     return true;
   } catch (e) { console.error('[wa] save contact', num, e.message); return false; }
@@ -505,7 +649,7 @@ let bulkTimer = null;
 export function queueContacts(tenantId, list) {
   if (Number(tenantId) !== KO_TENANT) return 0;
   const m = bulk.get(tenantId) || new Map(); let n = 0;
-  for (const { phone, name } of list) { const num = String(phone || '').replace(/\D/g, ''); const bk = bookName(tenantId, num); if (num.length >= 8 && !m.has(num) && (() => { const k = tenantId + ':' + num, sv = saved[k], rn = realNames[k], want = rn || ('زبون ' + num.slice(-4)); if (!bk) return !sv || (sv !== want && (isPlaceholder(sv) ? !!rn : true)); if (isPlaceholder(bk)) return !!rn && bk !== rn; return bk === sv && sv !== want; })()) { m.set(num, name || ''); n++; } }
+  for (const { phone, name } of list) { const num = String(phone || '').replace(/\D/g, ''); const bk = bookName(tenantId, num); if (num.length >= 8 && !m.has(num) && (() => { const k = tenantId + ':' + num, sv = saved[k], rn = realNames[k], want = rn || ('زبون ' + num.slice(-4)); if (!bk) return true; if (isPlaceholder(bk)) return !!rn && bk !== rn; return bk === sv && sv !== want; })()) { m.set(num, name || ''); n++; } }
   bulk.set(tenantId, m);
   if (n) console.log(`[wa] tenant ${tenantId}: ${n} numbers queued to save in contacts`);
   if (!bulkTimer) bulkTimer = setInterval(async () => {
