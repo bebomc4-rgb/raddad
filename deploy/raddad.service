@@ -1,0 +1,20 @@
+[Unit]
+Description=Raddad WhatsApp AI platform
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=raddad
+WorkingDirectory=/opt/raddad
+ExecStart=/usr/bin/node --no-warnings=ExperimentalWarning server.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+# حماية إضافية
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/opt/raddad/data
+
+[Install]
+WantedBy=multi-user.target

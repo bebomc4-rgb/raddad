@@ -1,0 +1,19 @@
+{
+  "name": "raddad",
+  "version": "1.0.0",
+  "description": "منصة وكيل مبيعات ذكي يرد على رسائل واتساب — متعددة المشتركين",
+  "type": "module",
+  "main": "server.js",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning server.js",
+    "dev": "node --no-warnings=ExperimentalWarning --watch server.js"
+  },
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "sharp": "^0.34.4"
+  }
+}

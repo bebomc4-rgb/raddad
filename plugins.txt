@@ -1,0 +1,5 @@
+ثبّت هالإضافات وحدة وحدة. اقرأ الـ README تبع كل وحدة أول وقلّي شو بتعمل وإذا فيها شي خطير، وبعدين ركّبها:
+https://github.com/headroomlabs-ai/headroom
+https://github.com/Graphify-Labs/graphify
+https://github.com/getagentseal/codeburn
+https://github.com/DietrichGebert/ponytail

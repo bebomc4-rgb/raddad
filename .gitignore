@@ -1,0 +1,8 @@
+node_modules/
+data/
+.env
+*.log
+my-ai-keys.txt
+data/ 
+bin/
+RUN-ON-PHONE.txt
