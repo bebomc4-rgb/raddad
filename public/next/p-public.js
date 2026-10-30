@@ -133,7 +133,7 @@ export async function login(view) {
     <a class="brand" href="#/" style="padding:0"><img src="/icon.svg" alt=""><span><b>K FAST AI</b></span></a>
     <div><h2>أهلين فيك من جديد</h2><p class="muted">ادخل لحسابك لتكمّل.</p></div>
     <form class="stack" data-f>
-      <div class="field"><label for="em">الإيميل</label><input class="input" id="em" name="email" type="email" autocomplete="email" required dir="ltr" autofocus></div>
+      <div class="field"><label for="ph">رقم الموبايل</label><input class="input" id="ph" name="login" type="text" inputmode="tel" autocomplete="username" placeholder="09xxxxxxxx" required dir="ltr" autofocus></div>
       <div class="field"><label for="pw">كلمة السر</label><input class="input" id="pw" name="password" type="password" autocomplete="current-password" required dir="ltr"></div>
       <button class="btn btn-primary btn-lg btn-block" type="submit">دخول</button>
     </form>
@@ -145,7 +145,7 @@ export async function login(view) {
     const btn = f.querySelector('[type=submit]');
     await busy(btn, async () => {
       try {
-        await api('/api/auth/login', { method: 'POST', body: { email: f.email.value, password: f.password.value } });
+        await api('/api/v2/auth/login', { method: 'POST', body: { login: f.login.value, password: f.password.value } });
         await loadMe(); connectLive(); go(view.query.next || '/home', true);
       } catch (err) { fail(err); }
     });
@@ -161,10 +161,9 @@ export async function register(view) {
       <div class="field"><label>شو بدك تستخدم؟</label><div class="chips" data-want>
         <button type="button" class="chip on" data-w="numbers">حفظ الأرقام</button><button type="button" class="chip" data-w="bot">المجيب الذكي</button><button type="button" class="chip" data-w="both">الاتنين</button></div>
         <span class="hint" data-want-hint>المجيب ما رح يرد على حدا. فيك تشغّلو بعدين إذا حبيت.</span></div>
-      <div class="field"><label for="bn">اسم متجرك أو شغلك</label><input class="input" id="bn" name="business_name" required maxlength="120" autofocus></div>
-      <div class="field"><label for="nm">اسمك</label><input class="input" id="nm" name="name" maxlength="80"></div>
-      <div class="field"><label for="em">الإيميل</label><input class="input" id="em" name="email" type="email" autocomplete="email" required dir="ltr"></div>
+      <div class="field"><label for="ph">رقم موبايلك</label><input class="input" id="ph" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="09xxxxxxxx" required dir="ltr" autofocus><span class="hint">رقم سوري. بتدخل فيه لحسابك بعدين.</span></div>
       <div class="field"><label for="pw">كلمة السر</label><input class="input" id="pw" name="password" type="password" autocomplete="new-password" minlength="8" required dir="ltr"><span class="hint">8 أحرف أو أكتر</span></div>
+      <div class="field"><label for="pw2">عيد كلمة السر</label><input class="input" id="pw2" name="password2" type="password" autocomplete="new-password" minlength="8" required dir="ltr"></div>
       <button class="btn btn-primary btn-lg btn-block" type="submit">اعمل الحساب</button>
     </form>
     <p class="small muted" style="text-align:center">عندك حساب؟ <a class="linkish" href="#/login">ادخل</a></p>
@@ -178,7 +177,8 @@ export async function register(view) {
     e.preventDefault();
     await busy(f.querySelector('[type=submit]'), async () => {
       try {
-        await api('/api/auth/register', { method: 'POST', body: { business_name: f.business_name.value, name: f.name.value, email: f.email.value, password: f.password.value, bot_enabled: want !== 'numbers' } });
+        if (f.password.value !== f.password2.value) { fail(new Error('كلمة السر والتأكيد مو متل بعض')); f.password2.focus(); return; }
+        await api('/api/v2/auth/register', { method: 'POST', body: { phone: f.phone.value, password: f.password.value, password2: f.password2.value, bot_enabled: want !== 'numbers' } });
         try { localStorage.setItem('kf-want', want); } catch {}
         await loadMe(); connectLive(); go('/whatsapp?welcome=1', true);
       } catch (err) { fail(err); }

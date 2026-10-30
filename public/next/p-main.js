@@ -1,5 +1,5 @@
 // الرئيسية، ربط واتساب، والحساب
-import { state, api, html, ic, n, date, left, eta, phoneFmt, toast, fail, busy, confirmBox, setTheme, themePref, periodName, money } from './core.js';
+import { state, api, html, raw, ic, n, date, left, eta, phoneFmt, toast, fail, busy, confirmBox, setTheme, themePref, periodName, money, readImage, avatarHTML, displayName } from './core.js';
 import { go, loadMe, paintNav, logout } from './app.js';
 
 export function waPill(wa) {
@@ -170,23 +170,32 @@ export async function whatsapp(view) {
 // ===== الحساب =====
 export async function account(view) {
   const me = await loadMe();
-  view.title('الحساب', me.user.email);
+  view.title('الملف الشخصي', me.user.phone || me.user.email || '');
   const theme = themePref();
   view.html(html`<div class="stack" style="max-width:760px">
     <div class="card pad-lg">
+      <div class="profile-head">
+        <label class="avatar-pick" title="غيّر الصورة">${raw(avatarHTML(me, 'xl'))}<span class="avatar-cam">${ic('camera')}</span><input type="file" accept="image/*" data-avatar hidden></label>
+        <div class="grow"><h2 style="margin:0">${displayName(me)}</h2><div class="muted ltr" style="text-align:start">${me.user.phone || me.user.email || ''}</div>
+          <div class="row" style="gap:8px;margin-top:10px"><label class="btn btn-sm">${ic('camera')} ${me.user.avatar ? 'غيّر الصورة' : 'حط صورة'}<input type="file" accept="image/*" data-avatar hidden></label>
+          ${me.user.avatar ? html`<button class="btn btn-sm btn-ghost" data-avatar-del>شيل الصورة</button>` : ''}</div></div>
+      </div>
+    </div>
+    <div class="card pad-lg">
       <div class="card-h"><h3>${ic('user')} معلوماتك</h3></div>
       <form class="stack" data-info>
-        <div class="grid g2"><div class="field"><label>اسمك</label><input class="input" name="name" value="${me.user.name || ''}" maxlength="80"></div>
-          <div class="field"><label>اسم المتجر</label><input class="input" name="store" value="${me.tenant.name}" maxlength="120" required></div></div>
-        <div class="field"><label>الإيميل</label><input class="input" value="${me.user.email}" disabled dir="ltr"></div>
+        <div class="grid g2"><div class="field"><label>اسمك</label><input class="input" name="name" value="${me.user.name || ''}" maxlength="80" placeholder="متل: أبو محمد"></div>
+          <div class="field"><label>اسم المتجر أو الشغل</label><input class="input" name="store" value="${me.tenant.name}" maxlength="120" required></div></div>
+        <div class="field"><label>رقم الموبايل (بتدخل فيه)</label><input class="input" name="phone" type="tel" inputmode="tel" value="${me.user.phone || ''}" placeholder="09xxxxxxxx" dir="ltr" ${me.user.phone ? 'required' : ''}></div>
         <div class="row end"><button class="btn btn-primary" type="submit">حفظ</button></div>
       </form>
     </div>
     <div class="card pad-lg">
       <div class="card-h"><h3>${ic('lock')} كلمة السر</h3></div>
       <form class="stack" data-pw>
-        <div class="grid g2"><div class="field"><label>الحالية</label><input class="input" type="password" name="cur" autocomplete="current-password" required dir="ltr"></div>
-          <div class="field"><label>الجديدة</label><input class="input" type="password" name="neu" autocomplete="new-password" minlength="8" required dir="ltr"></div></div>
+        <div class="field"><label>الحالية</label><input class="input" type="password" name="cur" autocomplete="current-password" required dir="ltr"></div>
+        <div class="grid g2"><div class="field"><label>الجديدة</label><input class="input" type="password" name="neu" autocomplete="new-password" minlength="8" required dir="ltr"></div>
+          <div class="field"><label>عيد الجديدة</label><input class="input" type="password" name="neu2" autocomplete="new-password" minlength="8" required dir="ltr"></div></div>
         <div class="row end"><button class="btn" type="submit">غيّر كلمة السر</button></div>
       </form>
     </div>
@@ -194,26 +203,33 @@ export async function account(view) {
       <span><b>شكل الواجهة</b><br><span class="small muted">ليلي، نهاري، أو حسب موبايلك</span></span>
       <div class="seg" data-theme-seg>${[['auto', 'تلقائي'], ['dark', 'ليلي'], ['light', 'نهاري']].map(([k, t]) => html`<button data-t="${k}" class="${theme === k ? 'on' : ''}">${t}</button>`)}</div>
     </div>
-    <div class="card row between">
+    ${me.user.is_super ? html`<div class="card row between">
       <span><b>اللوحة القديمة</b><br><span class="small muted">إذا بدك شي ما لقيتو هون لسا</span></span>
       <a class="btn btn-sm" href="/" target="_blank" rel="noopener">${ic('ext')} افتحها</a>
-    </div>
-    <button class="btn btn-danger" data-logout>${ic('out')} تسجيل خروج</button>
+    </div>` : ''}
+    <button class="btn btn-danger btn-lg" data-logout>${ic('out')} تسجيل الخروج</button>
   </div>`);
+  const saveAvatar = async url => { await api('/api/v2/profile', { method: 'PUT', body: { avatar: url } }); await loadMe(); paintNav(); account(view); };
+  view.on('change', '[data-avatar]', async (e, inp) => {
+    const file = inp.files?.[0]; if (!file) return;
+    try { const data = await readImage(file, 512); const r = await api('/api/upload', { method: 'POST', body: { data } }); await saveAvatar(r.url); toast('انحطّت الصورة'); } catch (err) { fail(err); }
+  });
+  view.on('click', '[data-avatar-del]', async () => { try { await saveAvatar(''); } catch (err) { fail(err); } });
   view.on('submit', '[data-info]', async (e, f) => {
     e.preventDefault();
     await busy(f.querySelector('[type=submit]'), async () => {
       try {
-        await api('/api/account', { method: 'PUT', body: { name: f.name.value } });
+        await api('/api/v2/profile', { method: 'PUT', body: { name: f.name.value, phone: f.phone.value } });
         if (f.store.value.trim() !== me.tenant.name) await api('/api/settings', { method: 'PUT', body: { name: f.store.value.trim() } });
-        await loadMe(); paintNav(); toast('انحفظ');
+        await loadMe(); paintNav(); account(view); toast('انحفظ');
       } catch (err) { fail(err); }
     });
   });
   view.on('submit', '[data-pw]', async (e, f) => {
     e.preventDefault();
+    if (f.neu.value !== f.neu2.value) { fail(new Error('كلمة السر الجديدة والتأكيد مو متل بعض')); return; }
     await busy(f.querySelector('[type=submit]'), async () => {
-      try { await api('/api/account', { method: 'PUT', body: { password_current: f.cur.value, password_new: f.neu.value } }); f.reset(); toast('تغيّرت كلمة السر'); } catch (err) { fail(err); }
+      try { await api('/api/v2/profile', { method: 'PUT', body: { password_current: f.cur.value, password_new: f.neu.value, password_new2: f.neu2.value } }); f.reset(); toast('تغيّرت كلمة السر'); } catch (err) { fail(err); }
     });
   });
   view.on('click', '[data-theme-seg] button', (e, b) => { setTheme(b.dataset.t); view.el.querySelectorAll('[data-theme-seg] button').forEach(x => x.classList.toggle('on', x === b)); paintNav(); });

@@ -3,7 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DATA_DIR } from './config.js';
-import { q, getSetting, usageToday } from './db.js';
+import { q, tx, getSetting, usageToday } from './db.js';
+import { hashPassword, verifyPassword, createSession } from './security.js';
+import { DEFAULT_SETTINGS, DEFAULT_KNOWLEDGE } from './tenants.js';
+import { clamp } from './text.js';
 import { router } from './routes.js';
 import { HttpError } from './http.js';
 import { rateLimit } from './security.js';
@@ -48,11 +51,90 @@ r.get('/api/public/catalog', () => ({
 }));
 
 // ===== أنا: ملخص اللوحة الجديدة =====
+// ===== الحساب برقم الموبايل السوري =====
+// بيقبل 09xxxxxxxx أو 9xxxxxxxx أو +963 / 00963، وبالأرقام العربية كمان → 9639xxxxxxxx
+export function syPhone(v) {
+  let d = String(v || '').replace(/[٠-٩]/g, c => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/[۰-۹]/g, c => '۰۱۲۳۴۵۶۷۸۹'.indexOf(c)).replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('963')) d = d.slice(3);
+  if (d.startsWith('0')) d = d.slice(1);
+  return /^9\d{8}$/.test(d) ? '963' + d : null;
+}
+const localPhone = p => (p ? '0' + String(p).slice(3) : '');
+const PHONE_MAIL = '@phone.kfast'; // عمود الإيميل إجباري بالقاعدة: حسابات الموبايل بتاخد إيميل داخلي ما بيبين
+function userOut(u) {
+  const x = q.get('SELECT phone, avatar FROM users WHERE id = ?', u.id) || {};
+  return { id: u.id, email: String(u.email || '').endsWith(PHONE_MAIL) ? '' : u.email, phone: localPhone(x.phone), avatar: x.avatar || '', name: u.name, role: u.role, is_super: !!u.is_super };
+}
+
+r.post('/api/v2/auth/register', ctx => {
+  const b = ctx.body;
+  const first = !q.get('SELECT 1 FROM users LIMIT 1');
+  need(first || getSetting('registration_open', true), 403, 'التسجيل مسكّر حالياً');
+  need(rateLimit('reg:' + ctx.ip, 5, 3600_000), 429, 'محاولات كتير، جرّب بعد شوي');
+  const phone = syPhone(b.phone);
+  need(phone, 400, 'اكتب رقم موبايل سوري صحيح، متل 0912345678');
+  const pw = String(b.password || '');
+  need(pw.length >= 8, 400, 'كلمة السر لازم تكون 8 أحرف أو أكتر');
+  need(pw === String(b.password2 || ''), 400, 'كلمة السر والتأكيد مو متل بعض');
+  need(!q.get('SELECT 1 FROM users WHERE phone = ?', phone), 409, 'هالرقم إلو حساب من قبل، ادخل فيه');
+  const shop = localPhone(phone); // اسم مبدئي، بيغيّرو من الملف الشخصي
+  const userId = tx(() => {
+    const t = q.run('INSERT INTO tenants (name, settings, knowledge) VALUES (?, ?, ?)', shop,
+      JSON.stringify({ ...DEFAULT_SETTINGS, cloud_verify_token: crypto.randomBytes(12).toString('hex') }),
+      JSON.stringify({ ...DEFAULT_KNOWLEDGE }));
+    const u = q.run('INSERT INTO users (tenant_id, email, phone, name, pass_hash, role, is_super) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      t.lastInsertRowid, phone + PHONE_MAIL, phone, '', hashPassword(pw), 'owner', first ? 1 : 0);
+    if (b.bot_enabled === false && !first) q.run('UPDATE tenants SET bot_enabled = 0 WHERE id = ?', t.lastInsertRowid);
+    return Number(u.lastInsertRowid);
+  });
+  ctx.setCookie(createSession(userId));
+  return { ok: true };
+});
+
+// دخول بالرقم (أو بالإيميل للحسابات القديمة متل حساب المدير)
+r.post('/api/v2/auth/login', ctx => {
+  const id = String(ctx.body.login || '').trim();
+  const phone = id.includes('@') ? null : syPhone(id);
+  const key = phone || id.toLowerCase();
+  need(rateLimit('login:' + ctx.ip, 10, 900_000) && rateLimit('login:' + key, 8, 900_000), 429, 'محاولات كتير، استنى ربع ساعة');
+  const u = phone ? q.get('SELECT * FROM users WHERE phone = ?', phone) : q.get('SELECT * FROM users WHERE email = ?', key);
+  need(u && verifyPassword(String(ctx.body.password || ''), u.pass_hash), 401, 'الرقم أو كلمة السر غلط');
+  ctx.setCookie(createSession(u.id));
+  return { ok: true };
+});
+
+// الملف الشخصي: الاسم، الصورة، الرقم، كلمة السر
+r.put('/api/v2/profile', ctx => {
+  auth(ctx);
+  const b = ctx.body, uid = ctx.user.id;
+  if (b.name !== undefined) q.run('UPDATE users SET name = ? WHERE id = ?', clamp(String(b.name), 80).trim(), uid);
+  if (b.avatar !== undefined) {
+    const a = String(b.avatar || '');
+    need(!a || (/^\/uploads\/[\w.-]+$/.test(a) && fs.existsSync(path.join(DATA_DIR, 'uploads', path.basename(a)))), 400, 'الصورة مو موجودة');
+    q.run('UPDATE users SET avatar = ? WHERE id = ?', a || null, uid);
+  }
+  if (b.phone !== undefined && String(b.phone).trim()) {
+    const p = syPhone(b.phone);
+    need(p, 400, 'اكتب رقم موبايل سوري صحيح، متل 0912345678');
+    need(!q.get('SELECT 1 FROM users WHERE phone = ? AND id != ?', p, uid), 409, 'هالرقم مستعمل بحساب تاني');
+    q.run('UPDATE users SET phone = ? WHERE id = ?', p, uid);
+  }
+  if (b.password_new) {
+    const u = q.get('SELECT pass_hash FROM users WHERE id = ?', uid);
+    need(verifyPassword(String(b.password_current || ''), u.pass_hash), 400, 'كلمة السر الحالية غلط');
+    need(String(b.password_new).length >= 8, 400, 'كلمة السر الجديدة لازم تكون 8 أحرف أو أكتر');
+    need(String(b.password_new) === String(b.password_new2 || ''), 400, 'كلمة السر الجديدة والتأكيد مو متل بعض');
+    q.run('UPDATE users SET pass_hash = ? WHERE id = ?', hashPassword(String(b.password_new)), uid);
+  }
+  return { ok: true, user: userOut(ctx.user) };
+});
+
 r.get('/api/v2/me', ctx => {
   auth(ctx);
   const t = ctx.tenant;
   return {
-    user: { id: ctx.user.id, email: ctx.user.email, name: ctx.user.name, role: ctx.user.role, is_super: !!ctx.user.is_super },
+    user: userOut(ctx.user),
     tenant: { id: t.id, name: t.name, slug: ensureSlug(t), status: t.status, wa_provider: t.wa_provider, wa_phone: t.wa_phone, contacts_prefix: t.settings.contacts_prefix || 'زبون' },
     wa: wa.status(t),
     services: servicesFor(t.id),
@@ -203,7 +285,7 @@ r.get('/api/admin/v2/overview', ctx => {
 r.get('/api/admin/v2/tenants', ctx => {
   sup(ctx);
   return q.all(`SELECT t.id, t.name, t.plan_id, t.plan_expires_at, t.status, t.wa_phone, t.bot_enabled, t.created_at,
-      (SELECT email FROM users WHERE tenant_id = t.id ORDER BY id LIMIT 1) email,
+      (SELECT CASE WHEN phone IS NOT NULL THEN '0' || substr(phone, 4) ELSE email END FROM users WHERE tenant_id = t.id ORDER BY id LIMIT 1) email,
       (SELECT MAX(is_super) FROM users WHERE tenant_id = t.id) is_super,
       (SELECT COALESCE(SUM(ai_replies),0) FROM usage WHERE tenant_id = t.id AND day >= date('now','-6 days')) ai_7d
     FROM tenants t ORDER BY t.id DESC LIMIT 500`).map(t => {
@@ -232,7 +314,7 @@ r.put('/api/admin/v2/services', ctx => { sup(ctx); saveServices(ctx.body.service
 r.get('/api/admin/v2/payments', ctx => {
   sup(ctx);
   const names = Object.fromEntries([...q.all('SELECT id, name FROM plans'), ...q.all('SELECT id, name FROM services')].map(x => [x.id, x.name]));
-  return q.all(`SELECT p.*, t.name tenant_name, (SELECT email FROM users WHERE tenant_id = t.id ORDER BY id LIMIT 1) email
+  return q.all(`SELECT p.*, t.name tenant_name, (SELECT CASE WHEN phone IS NOT NULL THEN '0' || substr(phone, 4) ELSE email END FROM users WHERE tenant_id = t.id ORDER BY id LIMIT 1) email
     FROM payment_requests p JOIN tenants t ON t.id = p.tenant_id ORDER BY (p.status IN ('pending','awaiting_delivery')) DESC, p.id DESC LIMIT 300`)
     .map(p => ({ ...p, name: names[p.service_id || p.plan_id] || p.plan_id }));
 });

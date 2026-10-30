@@ -116,6 +116,14 @@ export function eta(count, secEach = 2.5) {
   const h = Math.floor(m / 60), r = m % 60; return `حوالي ${h} ساعة${r >= 10 ? ` و${r} دقيقة` : ''}`;
 }
 export const initials = s => String(s || '؟').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('') || '؟';
+// صورة الملف الشخصي (أو أول حروف الاسم إذا ما في صورة)
+export const displayName = me => me?.user?.name || me?.tenant?.name || me?.user?.phone || 'حسابي';
+export const avatarHTML = (me, cls = '') => {
+  const a = me?.user?.avatar;
+  if (a) return `<span class="avatar ${cls}"><img src="${esc(a)}" alt=""></span>`;
+  const nm = me?.user?.name || me?.tenant?.name || '';
+  return `<span class="avatar ${cls}">${nm && !/^[\d\s+]+$/.test(nm) ? esc(initials(nm)) : icon('user')}</span>`;
+};
 export const phoneFmt = p => { const d = String(p || '').replace(/\D/g, ''); return d ? '+' + d : ''; };
 
 export function copy(text) {
@@ -158,6 +166,7 @@ const P = {
   sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
   play: '<circle cx="12" cy="12" r="9"/><path d="m10 8.5 5.5 3.5-5.5 3.5v-7Z"/>',
   card: '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c.8-4 4-6 8-6s7.2 2 8 6"/>',
   shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.4 7.5 9.5 4.4-1.1 7.5-4.9 7.5-9.5V6L12 3Z"/><path d="m9 12 2 2 4-4"/>',
   chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',

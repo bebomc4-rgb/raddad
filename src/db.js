@@ -302,6 +302,12 @@ const migrations = [
      '["أوتوماتيك وقت ربط الواتس","وكمان من النسخة الاحتياطية من سنين","الملف بيتفك على جهازك وما بينرفع","بدون تكرار ولا لمس للأسماء يلي حاططها إنت"]', 2);
   INSERT INTO service_prices (service_id, months, price) VALUES
     ('contacts_new', 1, 5), ('contacts_new', 3, 12), ('contacts_new', 6, 20), ('contacts_new', 12, 35), ('contacts_old', 0, 10);
+  `,
+  // 14: الحساب برقم الموبايل السوري (بدل الإيميل) + صورة الملف الشخصي
+  `
+  ALTER TABLE users ADD COLUMN phone TEXT;
+  ALTER TABLE users ADD COLUMN avatar TEXT;
+  CREATE UNIQUE INDEX IF NOT EXISTS users_phone ON users(phone) WHERE phone IS NOT NULL;
   `
 ];
 

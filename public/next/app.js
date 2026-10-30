@@ -1,5 +1,5 @@
 // K FAST AI — الهيكل: الراوتر، القائمة الجانبية/السفلية، وتحميل الصفحات
-import { state, api, html, setHTML, str, icon, ic, on, connectLive, disconnectLive, toast, fail, modal, setTheme, themePref, initials, esc } from './core.js';
+import { state, api, html, raw, setHTML, str, icon, ic, on, connectLive, disconnectLive, toast, fail, modal, setTheme, themePref, initials, esc, avatarHTML, displayName } from './core.js';
 
 const ROUTES = [
   ['/', () => import('./p-public.js').then(m => m.landing), { public: true, bare: true }],
@@ -53,7 +53,7 @@ function navItems(me) {
           { href: '/bot/products', label: 'المنتجات' }, { href: '/bot/settings', label: 'شخصية المجيب' }, { href: '/bot/try', label: 'جرّبو' } ] } ] },
     { group: 'حسابي', links: [
       { href: '/billing', label: 'الاشتراكات والدفع', icon: 'card', badge: c.pending_payments ? '•' : 0 },
-      { href: '/account', label: 'الحساب', icon: 'user' } ] }
+      { href: '/account', label: 'الملف الشخصي', icon: 'user' } ] }
   ];
   if (me.user.is_super) items.push({ group: 'الإدارة', links: [
     { href: '/admin', label: 'نظرة عامة', icon: 'chart' },
@@ -77,9 +77,10 @@ function renderSide(me, path) {
   return `<aside class="side">
     <a class="brand" href="#/home"><img src="/icon.svg" alt=""><span><b>K FAST AI</b><small>واتسابك بيشتغل عنك</small></span></a>
     <nav class="nav">${groups}</nav>
-    <div class="side-foot"><span class="avatar">${esc(initials(me.user.name || me.tenant.name))}</span>
-      <span class="grow"><b style="display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(me.user.name || me.tenant.name)}</b><span class="tiny faint">${esc(me.tenant.name)}</span></span>
-      <button class="btn btn-ghost btn-icon btn-sm" data-theme-toggle title="الوضع الليلي/النهاري">${icon(document.documentElement.dataset.theme === 'light' ? 'moon' : 'sun')}</button></div>
+    <div class="side-foot"><a class="row grow" href="#/account" style="gap:10px;min-width:0" title="الملف الشخصي">${avatarHTML(me)}
+      <span class="grow" style="min-width:0"><b style="display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(displayName(me))}</b><span class="tiny faint">الملف الشخصي</span></span></a>
+      <button class="btn btn-ghost btn-icon btn-sm" data-theme-toggle title="الوضع الليلي/النهاري">${icon(document.documentElement.dataset.theme === 'light' ? 'moon' : 'sun')}</button>
+      <button class="btn btn-ghost btn-icon btn-sm" data-logout-now title="تسجيل الخروج">${icon('out')}</button></div>
   </aside>`;
 }
 function renderTabs(me, path) {
@@ -110,6 +111,19 @@ function openMore() {
     }
   });
 }
+function openUserMenu() {
+  const me = state.me; if (!me) return;
+  modal({
+    title: 'حسابي',
+    body: html`<div class="row" style="gap:14px;margin-bottom:16px">${raw(avatarHTML(me, 'lg'))}<span><b style="font-size:17px">${displayName(me)}</b><br><span class="small muted ltr">${(me.user.phone || me.user.email || '') === displayName(me) ? '' : (me.user.phone || me.user.email || '')}</span></span></div>
+      <div class="stack" style="gap:10px"><a class="btn btn-block" href="#/account" data-close>${ic('user')} الملف الشخصي</a>
+      <button class="btn btn-danger btn-block" data-logout>${ic('out')} تسجيل الخروج</button></div>`,
+    onMount(m, close) {
+      m.querySelectorAll('[data-close]').forEach(a => a.addEventListener('click', close));
+      m.querySelector('[data-logout]').onclick = () => { close(); logout(); };
+    }
+  });
+}
 export async function logout() {
   try { await api('/api/auth/logout', { method: 'POST', body: {} }); } catch {}
   state.me = null; disconnectLive(); go('/login');
@@ -125,7 +139,7 @@ function makeView(main, route, params, query) {
     title(t, sub = '', back = '') {
       const tb = main.querySelector('.topbar');
       if (!tb) return;
-      tb.innerHTML = `${back ? `<a class="btn btn-ghost btn-icon back" href="#${back}" aria-label="رجوع">${icon('back')}</a>` : ''}<div class="grow"><h1>${esc(t)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div><div class="row nowrap" data-actions></div>`;
+      tb.innerHTML = `${back ? `<a class="btn btn-ghost btn-icon back" href="#${back}" aria-label="رجوع">${icon('back')}</a>` : ''}<div class="grow"><h1>${esc(t)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div><div class="row nowrap" data-actions></div><button class="me-btn" data-user-menu aria-label="حسابي">${avatarHTML(state.me)}</button>`;
       document.title = `${t} — K FAST AI`;
     },
     actions(t) { const a = main.querySelector('[data-actions]'); if (a) a.innerHTML = str(t); return a; },
@@ -199,6 +213,8 @@ export function refreshMe(delay = 400) {
 // ===== أحداث عامة =====
 document.addEventListener('click', e => {
   if (e.target.closest('[data-more]')) { e.preventDefault(); openMore(); }
+  if (e.target.closest('[data-user-menu]')) { e.preventDefault(); openUserMenu(); }
+  if (e.target.closest('[data-logout-now]')) { e.preventDefault(); logout(); }
   const tt = e.target.closest('[data-theme-toggle]');
   if (tt) { const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; setTheme(next); tt.innerHTML = icon(next === 'light' ? 'moon' : 'sun'); }
 });
