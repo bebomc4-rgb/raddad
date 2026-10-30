@@ -20,7 +20,7 @@ export async function landing(view) {
   const respFrom = Math.min(...paidPlans.map(p => p.prices?.[1]).filter(x => x > 0), Infinity);
   const products = [
     { id: 'responder', icon: 'bot', cls: 'blue', name: 'المجيب الذكي', desc: 'بيرد على كل زبون بثواني باللهجة السورية، بيعرف منتجاتك وأسعارك، وبياخد الطلب كامل.',
-      feats: ['بيحكي بأسلوبك وبيفهم اللهجة', 'بيسمع الرسائل الصوتية وبيشوف الصور', 'بياخد الاسم والرقم والعنوان ويبعتلك الطلب', 'بيسكت لحالو لما ترد إنت من موبايلك'],
+      feats: ['بيحكي بأسلوبك وبيفهم اللهجة', 'ردود بلا حدود', 'بيفهم الرسائل الصوتية وبيرد عليها', 'بيشوف الصور وبيرد بطريقة تسويقية', 'بياخد الاسم والرقم والعنوان ويبعتلك الطلب', 'بيسكت لحالو لما ترد إنت من موبايلك'],
       price: isFinite(respFrom) ? html`<span class="price">${money(respFrom)}</span> <small>بالشهر</small>` : html`<span class="muted">حسب الباقة</span>`,
       extra: cat.trial ? html`<span class="pill gold plain">${ic('sparkle')} تجربة ${trialText(cat.trial)} ببلاش</span>` : '' },
     { id: 'contacts_new', icon: 'book', cls: 'violet', name: sNew.name || 'حفظ كل رقم جديد', desc: sNew.description, feats: sNew.features,
@@ -99,7 +99,7 @@ export async function landing(view) {
         <div class="grid ${paidPlans.length >= 3 ? 'g3' : 'g2'}">${paidPlans.map((p, i) => html`<div class="card pad-lg product ${i === 1 ? 'glow' : ''}">
           <div class="row between"><h3>${p.name}</h3>${i === 1 ? html`<span class="pill gold plain">الأكتر طلباً</span>` : ''}</div>
           <div><span class="price">${money(p.prices?.[months], p.currency)}</span> <small class="muted">/ ${periodName(months)}</small></div>
-          <ul>${(p.features?.length ? p.features : [`${n(p.ai_replies_per_day)} رد ذكي باليوم`, `حتى ${n(p.max_products)} منتج`]).slice(0, 6).map(f => html`<li>${f}</li>`)}</ul>
+          <ul>${(p.features?.length ? p.features : ['ردود بلا حدود', `حتى ${n(p.max_products)} منتج`]).slice(0, 6).map(f => html`<li>${f}</li>`)}</ul>
           <a class="btn btn-primary btn-block" href="#/register" style="margin-top:auto">اشترك</a></div>`)}</div>`);
     } else {
       const s = tab === 'contacts_new' ? sNew : sOld;

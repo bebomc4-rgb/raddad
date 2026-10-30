@@ -86,7 +86,7 @@ export async function billing(view) {
         <div class="grid ${paid.length >= 3 ? 'g3' : 'g2'}">${paid.map((p, i) => html`<div class="card product ${i === 1 ? 'glow' : ''}">
           <div class="row between"><h3>${p.name}</h3>${r.paid && r.plan_id === p.id ? html`<span class="pill ok">باقتك</span>` : ''}</div>
           <div><span class="price">${money(p.prices[months], p.currency)}</span> <small class="muted">/ ${periodName(months)}</small></div>
-          <ul>${(p.features?.length ? p.features : [`${p.ai_replies_per_day.toLocaleString('en-US')} رد ذكي باليوم`, `حتى ${p.max_products.toLocaleString('en-US')} منتج`]).slice(0, 5).map(f => html`<li>${f}</li>`)}</ul>
+          <ul>${(p.features?.length ? p.features : ['ردود بلا حدود', `حتى ${p.max_products.toLocaleString('en-US')} منتج`]).slice(0, 5).map(f => html`<li>${f}</li>`)}</ul>
           <button class="btn btn-primary btn-block" style="margin-top:auto" data-buy="plan" data-id="${p.id}" ${p.prices[months] == null ? 'disabled' : ''}>${r.paid && r.plan_id === p.id ? 'جدّد' : 'اشترك'}</button></div>`)}</div>`;
     } else {
       const s = svc(tab), entries = Object.entries(s.prices || {}).filter(([, v]) => v != null);

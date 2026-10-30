@@ -84,7 +84,7 @@ export function isJunk(qq, aa) {
   return false;
 }
 export function cleanExamples(tenantId) {
-  const rows = q.all('SELECT id, q, a FROM style_examples WHERE tenant_id = ?', tenantId);
+  const rows = q.all("SELECT id, q, a FROM style_examples WHERE tenant_id = ? AND source != 'manual'", tenantId); // يلي علّمو صاحب المتجر بإيدو ما بينمسح
   const bad = rows.filter(r => isJunk(r.q, r.a)).map(r => r.id);
   // نفس الرد مكرر كتير (غالباً رد جاهز): منخلي أول 3 بس
   const seen = new Map();
@@ -117,8 +117,8 @@ export function similarExamples(tenantId, text, k = 4) {
   autoClean(tenantId);
   let rows = cache.get(tenantId);
   if (!rows) {
-    rows = q.all('SELECT id, q, a, q_norm FROM style_examples WHERE tenant_id = ? ORDER BY id DESC LIMIT 20000', tenantId)
-      .filter(r => r.a.length >= 12 && r.q.length >= 4 && r.q_norm.split(' ').length >= 2) // منتجاهل المجاملات القصيرة
+    rows = q.all('SELECT id, q, a, q_norm, source FROM style_examples WHERE tenant_id = ? ORDER BY id DESC LIMIT 20000', tenantId)
+      .filter(r => r.source === 'manual' || (r.a.length >= 12 && r.q.length >= 4 && r.q_norm.split(' ').length >= 2)) // منتجاهل المجاملات القصيرة
       .map(r => ({ ...r, set: new Set(r.q_norm.split(' ').filter(Boolean)) }));
     cache.set(tenantId, rows);
   }
@@ -129,7 +129,7 @@ export function similarExamples(tenantId, text, k = 4) {
     for (const r of rows) {
       let s = 0;
       for (const w of words) if (r.set.has(w)) s++;
-      if (s) scored.push([s / Math.sqrt(r.set.size + 1), r]);
+      if (s) scored.push([(s / Math.sqrt(r.set.size + 1)) * (r.source === 'manual' ? 2.5 : 1), r]); // يلي علّمو صاحب المتجر إلو الأولوية
     }
   }
   scored.sort((a, b) => b[0] - a[0]);
@@ -193,4 +193,15 @@ export function learnFromLive(tenantId, contactId) {
   while (i >= 0 && msgs[i].direction === 'in') qq.unshift(msgs[i--].body);
   if (!qq.length) return 0;
   return savePairs(tenantId, [{ q: clamp(qq.join('\n'), 600), a: clamp(a.join('\n'), 800) }], 'live');
+}
+
+// تعليم يدوي من صفحة «علّم المجيب»: سؤال ← الجواب الصح (بلا فلترة)
+export function addManual(tenantId, qq, aa) {
+  q.run(`INSERT INTO style_examples (tenant_id, q, a, q_norm, sig, source) VALUES (?, ?, ?, ?, ?, 'manual')
+         ON CONFLICT(tenant_id, sig) DO UPDATE SET source = 'manual', a = excluded.a`, tenantId, qq, aa, normQ(qq), sigOf(qq, aa));
+  cache.delete(tenantId);
+}
+export function deleteExample(tenantId, id) {
+  q.run('DELETE FROM style_examples WHERE id = ? AND tenant_id = ?', Number(id), tenantId);
+  cache.delete(tenantId);
 }

@@ -308,6 +308,13 @@ const migrations = [
   ALTER TABLE users ADD COLUMN phone TEXT;
   ALTER TABLE users ADD COLUMN avatar TEXT;
   CREATE UNIQUE INDEX IF NOT EXISTS users_phone ON users(phone) WHERE phone IS NOT NULL;
+  `,
+  // 15: ردود بلا حدود لكل الباقات، وبيفهم الصوت والصور (قرار صاحب المنصة)
+  `
+  UPDATE plans SET ai_replies_per_day = 1000000;
+  UPDATE plans SET features = '["ردود بلا حدود","بيفهم الرسائل الصوتية وبيرد عليها","بيشوف الصور وبيرد بطريقة تسويقية","حتى 5000 منتج","أولوية بالدعم"]' WHERE id = 'pro';
+  UPDATE plans SET features = '["ردود بلا حدود","بيفهم الرسائل الصوتية وبيرد عليها","بيشوف الصور وبيرد بطريقة تسويقية","منتجات بلا حدود تقريباً","ربط رسمي Cloud API"]' WHERE id = 'business';
+  UPDATE plans SET features = '["ردود بلا حدود","بيفهم الرسائل الصوتية وبيرد عليها","بيشوف الصور وبيرد بطريقة تسويقية","حتى 100 منتج"]' WHERE id = 'free';
   `
 ];
 

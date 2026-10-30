@@ -93,10 +93,8 @@ export function aiAllowance(tenant) {
   const usage = usageToday(tenant.id);
   const ownKey = tenant.ai_provider !== 'platform' && tenant.ai_key_enc && plan.allow_own_key;
   if (ownKey) return { ok: true, ownKey: true, plan, usage };
-  // صاحب المنصة: بلا حد يومي
-  if (q.get('SELECT 1 FROM users WHERE tenant_id = ? AND is_super = 1', tenant.id)) return { ok: true, ownKey: false, plan, usage, limit: Infinity };
-  const limit = plan.ai_replies_per_day;
-  return { ok: usage.ai_replies < limit, ownKey: false, plan, usage, limit };
+  // ردود بلا حدود لكل المشتركين (قرار صاحب المنصة)
+  return { ok: true, ownKey: false, plan, usage, limit: Infinity };
 }
 
 export function safeJSON(s, fb = {}) {

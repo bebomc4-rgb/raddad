@@ -16,6 +16,7 @@ const ROUTES = [
   ['/bot/products', () => import('./p-bot.js').then(m => m.products)],
   ['/bot/settings', () => import('./p-bot.js').then(m => m.settings)],
   ['/bot/try', () => import('./p-bot.js').then(m => m.tryout)],
+  ['/bot/learn', () => import('./p-bot.js').then(m => m.learn)],
   ['/billing', () => import('./p-billing.js').then(m => m.billing)],
   ['/account', () => import('./p-main.js').then(m => m.account)],
   ['/admin', () => import('./p-admin.js').then(m => m.overview), { admin: true }],
@@ -50,7 +51,7 @@ function navItems(me) {
       { href: '/numbers', label: 'حفظ الأرقام', icon: 'book' },
       { href: '/bot', label: 'المجيب الذكي', icon: 'bot', badge: (c.unread || 0) + (c.needs_human || 0) || 0,
         subs: [ { href: '/bot/inbox', label: 'المحادثات', badge: c.unread || 0 }, { href: '/bot/orders', label: 'الطلبات', badge: c.new_orders || 0 },
-          { href: '/bot/products', label: 'المنتجات' }, { href: '/bot/settings', label: 'شخصية المجيب' }, { href: '/bot/try', label: 'جرّبو' } ] } ] },
+          { href: '/bot/products', label: 'المنتجات' }, { href: '/bot/settings', label: 'شخصية المجيب' }, { href: '/bot/learn', label: 'علّم المجيب' }, { href: '/bot/try', label: 'جرّبو' } ] } ] },
     { group: 'حسابي', links: [
       { href: '/billing', label: 'الاشتراكات والدفع', icon: 'card', badge: c.pending_payments ? '•' : 0 },
       { href: '/account', label: 'الملف الشخصي', icon: 'user' } ] }

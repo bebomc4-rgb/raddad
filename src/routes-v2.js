@@ -38,7 +38,7 @@ function responderState(t) {
     enabled: !!t.bot_enabled, unlocked, plan_id: t.plan_id, plan_name: plan.name, active_plan: plan.id, paid,
     expires_at: t.plan_expires_at, expired: subscriptionExpired(t), gate,
     replying: !!t.bot_enabled && t.status === 'active' && !subscriptionExpired(t) && gate.ok,
-    usage: usageToday(t.id), limit: plan.ai_replies_per_day, trial_seconds: trialSeconds()
+    usage: usageToday(t.id), limit: null, trial_seconds: trialSeconds()
   };
 }
 
@@ -161,6 +161,30 @@ r.get('/api/v2/bot-settings', ctx => {
 });
 
 // تشغيل/إيقاف المجيب (أول تشغيل بيبلّش التجربة المجانية)
+// ===== تعليم المجيب: سؤال ← الجواب الصح (بيستعملها كأمثلة لما زبون يسأل شي مشابه) =====
+r.get('/api/v2/learn', ctx => {
+  owner(ctx);
+  const t = ctx.tenant;
+  const rows = q.all("SELECT id, q, a, source, created_at FROM style_examples WHERE tenant_id = ? ORDER BY (source = 'manual') DESC, id DESC LIMIT 300", t.id);
+  const by = Object.fromEntries(q.all('SELECT source, COUNT(*) n FROM style_examples WHERE tenant_id = ? GROUP BY source', t.id).map(x => [x.source, x.n]));
+  return { items: rows, total: Object.values(by).reduce((a, b) => a + b, 0), manual: by.manual || 0, imported: (by.import || 0), style_profile: t.settings.style_profile || '',
+    understand_media: t.settings.understand_media !== false, use_examples: t.settings.use_examples !== false };
+});
+r.post('/api/v2/learn', async ctx => {
+  owner(ctx);
+  const qq = String(ctx.body.q || '').trim().slice(0, 600), aa = String(ctx.body.a || '').trim().slice(0, 1500);
+  need(qq && aa, 400, 'اكتب سؤال الزبون والجواب الصح');
+  const st = await import('./style.js');
+  if (ctx.body.id) st.deleteExample(ctx.tenant.id, ctx.body.id);
+  st.addManual(ctx.tenant.id, qq, aa);
+  return { ok: true };
+});
+r.del('/api/v2/learn/:id', async ctx => {
+  owner(ctx);
+  (await import('./style.js')).deleteExample(ctx.tenant.id, ctx.params.id);
+  return { ok: true };
+});
+
 r.put('/api/v2/responder', ctx => {
   owner(ctx);
   const on = !!ctx.body.enabled;

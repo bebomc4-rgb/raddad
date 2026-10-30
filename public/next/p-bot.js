@@ -25,14 +25,14 @@ export async function overview(view) {
         ${!r.unlocked ? html`<div class="note" style="margin-top:14px">${ic('lock')}<span class="grow">المجيب مقفول. اشترك فيه وبيتفعّل عندك.</span><a class="btn btn-sm btn-primary" href="#/billing?tab=responder">اشترك</a></div>` : ''}
       </div>
       <div class="grid g4">
-        <div class="card stat"><span class="k">ردود اليوم</span><span class="v num">${n(r.usage?.ai_replies)}</span><span class="tiny faint">من ${n(r.limit)} باليوم</span></div>
+        <div class="card stat"><span class="k">ردود اليوم</span><span class="v num">${n(r.usage?.ai_replies)}</span><span class="tiny faint">بلا حدود</span></div>
         <div class="card stat"><span class="k">رسائل اليوم</span><span class="v num">${n((r.usage?.msgs_in || 0) + (r.usage?.msgs_out || 0))}</span></div>
         <a class="card stat" href="#/bot/inbox"><span class="k">مو مقروءة</span><span class="v num">${n(c.unread)}</span><span class="tiny faint">${n(c.needs_human)} بدهن موظف</span></a>
         <a class="card stat" href="#/bot/orders"><span class="k">طلبات جديدة</span><span class="v num">${n(c.new_orders)}</span></a>
       </div>
       <div class="grid g3">
         ${[['/bot/inbox', 'chat', 'blue', 'المحادثات', 'شوف شو عم يحكي مع زباينك، ورد بإيدك'], ['/bot/orders', 'bag', 'gold', 'الطلبات', 'كل طلب أخدو المجيب، مع الاسم والعنوان'],
-           ['/bot/products', 'box', 'violet', 'المنتجات', `${n(c.products)} منتج بيعرفهن المجيب`], ['/bot/settings', 'sliders', 'blue', 'شخصية المجيب', 'اسمو، أسلوبو، ومعلومات متجرك'],
+           ['/bot/products', 'box', 'violet', 'المنتجات', `${n(c.products)} منتج بيعرفهن المجيب`], ['/bot/settings', 'sliders', 'blue', 'شخصية المجيب', 'اسمو، أسلوبو، ومعلومات متجرك'], ['/bot/learn', 'sparkle', 'gold', 'علّم المجيب', 'علّمو أجوبة متجرك، أو خليه يتعلّم من محادثاتك'],
            ['/bot/try', 'play', 'green', 'جرّبو', 'احكي معو متل زبون قبل ما تشغّلو']].map(([h, i, cl, t, s]) => html`<a class="card row nowrap" href="#${h}"><span class="ico ${cl}">${ic(i)}</span><span class="grow"><b>${t}</b><br><span class="small muted">${s}</span></span>${ic('fwd')}</a>`)}
       </div>
     </div>`);
@@ -180,7 +180,7 @@ function editProduct(p, done) {
       });
       m.querySelector('[data-del]')?.addEventListener('click', async () => {
         if (!await confirmBox(`رح ينحذف «${p.name}».`, { ok: 'احذف', danger: true })) return;
-        try { await api(`/api/products/${p.id}`, { method: 'DELETE' }); close(); toast('انحذف'); done(); } catch (err) { fail(err); }
+        try { await api(`/api/products/${p.id}`, { method: 'DELETE', body: {} }); close(); toast('انحذف'); done(); } catch (err) { fail(err); }
       });
     }
   });
@@ -287,4 +287,103 @@ export async function tryout(view) {
     catch (err) { convo.pop(); fail(err); }
     draw();
   });
+}
+
+// ===== علّم المجيب =====
+const fileToDataURL = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => no(new Error('ما قدرت اقرا الملف')); r.readAsDataURL(f); });
+export async function learn(view) {
+  view.title('علّم المجيب', 'كل شي بتعلّمو ياه بيستعملو بالرد على زباينك', '/bot');
+  let tab = 'manual', editing = null, chatFiles = null;
+  const draw = async () => {
+    const d = await api('/api/v2/learn'); if (!view.alive) return;
+    const items = d.items.filter(x => tab === 'manual' ? x.source === 'manual' : x.source !== 'manual');
+    view.html(html`<div class="stack" style="max-width:900px">
+      <div class="card pad-lg glow">
+        <div class="row nowrap"><span class="ico lg gold">${ic('sparkle')}</span><span class="grow"><h2>علّمو متل ما بتعلّم موظف جديد</h2>
+          <span class="muted small">اكتب سؤال بيسألو الزبون والجواب الصح، والمجيب بيرد بنفس الطريقة لما حدا يسأل شي متلو. يلي بتعلّمو إنت إلو الأولوية.</span></span></div>
+        <div class="grid g3" style="margin-top:16px">
+          <div class="card stat flat"><span class="k">علّمتو إنت</span><span class="v num">${n(d.manual)}</span></div>
+          <div class="card stat flat"><span class="k">تعلّمو من محادثاتك</span><span class="v num">${n(d.total - d.manual)}</span></div>
+          <div class="card stat flat"><span class="k">أسلوبك</span><span class="v" style="font-size:16px">${d.style_profile ? 'محفوظ ✓' : 'لسا'}</span></div>
+        </div>
+      </div>
+
+      <div class="card pad-lg">
+        <div class="card-h"><h3>${ic('chat')} ${editing ? 'عدّل الجواب' : 'علّمو جواب جديد'}</h3></div>
+        <form class="stack" data-teach>
+          <div class="field"><label>شو بيسأل الزبون؟</label><textarea class="textarea" name="q" rows="2" required maxlength="600" placeholder="متل: في توصيل لحلب؟ / قديش سعر الكرة؟ / وين محلكن؟">${editing?.q || ''}</textarea></div>
+          <div class="field"><label>شو لازم يرد المجيب؟</label><textarea class="textarea" name="a" rows="3" required maxlength="1500" placeholder="اكتب الجواب متل ما بتكتبو إنت للزبون">${editing?.a || ''}</textarea></div>
+          <div class="row end">${editing ? html`<button type="button" class="btn btn-ghost" data-cancel>إلغاء</button>` : ''}<button class="btn btn-primary" type="submit">${ic('check')} ${editing ? 'احفظ' : 'علّمو'}</button></div>
+        </form>
+      </div>
+
+      <div class="card pad-lg">
+        <div class="row between" style="margin-bottom:12px"><h3>${ic('book')} يلي بيعرفو</h3>
+          <div class="seg" data-tabs><button data-t="manual" class="${tab === 'manual' ? 'on' : ''}">علّمتو إنت</button><button data-t="chats" class="${tab === 'chats' ? 'on' : ''}">من محادثاتك</button></div></div>
+        ${items.length ? html`<div class="list">${items.slice(0, 150).map(x => html`<div class="item" style="align-items:flex-start">
+            <span class="grow" style="min-width:0"><b class="small">🙋 ${x.q}</b><br><span class="small muted">🤖 ${x.a}</span></span>
+            <span class="row nowrap">${x.source === 'manual' ? html`<button class="btn btn-ghost btn-icon btn-sm" data-edit="${x.id}" title="عدّل">${ic('edit')}</button>` : ''}<button class="btn btn-ghost btn-icon btn-sm" data-del="${x.id}" title="احذف">${ic('trash')}</button></span></div>`)}</div>`
+          : html`<div class="empty"><p class="muted">${tab === 'manual' ? 'لسا ما علّمتو شي. ابدأ بأكتر 5 أسئلة بيسألوها زباينك.' : 'لسا ما تعلّم من محادثاتك. ارفع محادثات من تحت.'}</p></div>`}
+      </div>
+
+      <div class="card pad-lg stack">
+        <div class="card-h"><h3>${ic('upload')} خليه يتعلّم من محادثاتك القديمة</h3></div>
+        <p class="small muted">من واتساب: افتح محادثة مع زبون ← النقاط التلات ← المزيد ← تصدير الدردشة ← بدون وسائط. ارفع الملفات هون (txt أو zip)، والمجيب بيتعلّم كيف بترد وبأي أسلوب.</p>
+        <label class="btn">${ic('upload')} اختار ملفات المحادثات<input type="file" accept=".txt,.zip,text/plain,application/zip" multiple data-chats hidden></label>
+        <div data-chat-step></div>
+        ${d.total >= 5 ? html`<div class="row between"><span class="small muted">${d.style_profile ? 'فيك تعيد تحليل أسلوبك بعد ما تضيف محادثات جديدة.' : 'خلّي المجيب يحلّل أسلوبك ويقلّدو.'}</span><button class="btn btn-sm" data-analyze>${ic('sparkle')} حلّل أسلوبي</button></div>` : ''}
+      </div>
+
+      <div class="card pad-lg">
+        <div class="card-h"><h3>${ic('mic')} الصوت والصور</h3></div>
+        <label class="check"><input type="checkbox" data-media ${d.understand_media ? 'checked' : ''}><span><b>بيفهم الرسائل الصوتية والصور</b><br>
+          <span class="small muted">إذا الزبون بعت تسجيل صوت، المجيب بيسمعو وبيرد عليه. وإذا بعت صورة، بيشوف شو فيها وبيرد بطريقة تسويقية وبيقترح أشبه منتج عندك.</span></span></label>
+      </div>
+
+      <a class="card row nowrap" href="#/bot/try"><span class="ico green">${ic('play')}</span><span class="grow"><b>جرّب يلي علّمتو</b><br><span class="small muted">احكي معو متل زبون وشوف كيف بيرد</span></span>${ic('fwd')}</a>
+    </div>`);
+  };
+  await draw();
+  view.on('click', '[data-tabs] button', (e, b) => { tab = b.dataset.t; draw(); });
+  view.on('submit', '[data-teach]', async (e, f) => {
+    e.preventDefault();
+    await busy(f.querySelector('[type=submit]'), async () => {
+      try { await api('/api/v2/learn', { method: 'POST', body: { q: f.q.value, a: f.a.value, id: editing?.id } }); toast(editing ? 'انحفظ ✓' : 'تعلّمها ✓'); editing = null; tab = 'manual'; await draw(); }
+      catch (err) { fail(err); }
+    });
+  });
+  view.on('click', '[data-cancel]', () => { editing = null; draw(); });
+  view.on('click', '[data-edit]', async (e, b) => {
+    const d = await api('/api/v2/learn'); editing = d.items.find(x => x.id === Number(b.dataset.edit)) || null; await draw();
+    view.el.querySelector('[data-teach] textarea')?.focus(); window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  view.on('click', '[data-del]', async (e, b) => {
+    if (!await confirmBox('رح ينسى هالجواب.', { ok: 'احذف', danger: true })) return;
+    try { await api(`/api/v2/learn/${b.dataset.del}`, { method: 'DELETE', body: {} }); toast('انحذف'); await draw(); } catch (err) { fail(err); }
+  });
+  view.on('change', '[data-media]', async (e, i) => {
+    try { await api('/api/settings', { method: 'PUT', body: { settings: { understand_media: i.checked } } }); toast(i.checked ? 'صار يفهم الصوت والصور ✓' : 'انطفى فهم الصوت والصور'); } catch (err) { fail(err); i.checked = !i.checked; }
+  });
+  view.on('change', '[data-chats]', async (e, inp) => {
+    const box = view.el.querySelector('[data-chat-step]');
+    try {
+      const list = [...inp.files].slice(0, 200);
+      if (!list.length) return;
+      box.innerHTML = '<p class="small muted">عم اقرا الملفات…</p>';
+      chatFiles = await Promise.all(list.map(async f => ({ name: f.name, data: await fileToDataURL(f) })));
+      const r = await api('/api/style/parse', { method: 'POST', body: { files: chatFiles } });
+      box.innerHTML = str(html`<div class="note" style="flex-direction:column;align-items:stretch;gap:10px"><span>لقيت ${n(r.messages)} رسالة بـ ${n(r.chats)} محادثة. مين إنت بهالمحادثات؟</span>
+        <select class="select" data-me>${r.participants.map(p => html`<option value="${p.name}" ${p.name === r.guess ? 'selected' : ''}>${p.name} (${n(p.messages)} رسالة)</option>`)}</select>
+        <button class="btn btn-primary" data-import>${ic('check')} تعلّم من ردودي</button></div>`);
+    } catch (err) { box.innerHTML = ''; fail(err); }
+  });
+  view.on('click', '[data-import]', (e, b) => busy(b, async () => {
+    try {
+      const r = await api('/api/style/import', { method: 'POST', body: { me: view.el.querySelector('[data-me]').value, files: chatFiles } });
+      toast(`تعلّم ${n(r.added)} رد جديد من محادثاتك ✓`); chatFiles = null; tab = 'chats'; await draw();
+    } catch (err) { fail(err); }
+  }));
+  view.on('click', '[data-analyze]', (e, b) => busy(b, async () => {
+    try { await api('/api/style/analyze', { method: 'POST', body: {} }); toast('حلّل أسلوبك وصار يقلّدو ✓'); await draw(); } catch (err) { fail(err); }
+  }));
 }
