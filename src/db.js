@@ -330,6 +330,11 @@ const migrations = [
     ('shamcash_qr', '"/uploads/shamcash-qr.jpg"'),
     ('cash_address', '"دمشق - قدسيا - خلف البلدية"')
   ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+  `,
+  // 18: أسعار «حفظ كل رقم جديد» (صاحب المنصة: شهر 10$، سنة 50$، والباقي بالنص)
+  `
+  INSERT INTO service_prices (service_id, months, price) VALUES ('contacts_new', 1, 10), ('contacts_new', 3, 25), ('contacts_new', 6, 35), ('contacts_new', 12, 50)
+  ON CONFLICT(service_id, months) DO UPDATE SET price = excluded.price;
   `
 ];
 
