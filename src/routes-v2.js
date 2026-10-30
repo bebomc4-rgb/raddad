@@ -73,19 +73,22 @@ r.post('/api/v2/auth/register', ctx => {
   const first = !q.get('SELECT 1 FROM users LIMIT 1');
   need(first || getSetting('registration_open', true), 403, 'التسجيل مسكّر حالياً');
   need(rateLimit('reg:' + ctx.ip, 5, 3600_000), 429, 'محاولات كتير، جرّب بعد شوي');
+  const fullName = clamp(String(b.name || ''), 80).trim().replace(/\s+/g, ' ');
+  need(fullName.split(' ').filter(w => w.length > 1).length >= 3, 400, 'اكتب اسمك الثلاثي (الاسم، اسم الأب، الكنية)');
+  const shopName = clamp(String(b.business_name || ''), 120).trim();
+  need(shopName.length >= 2, 400, 'اكتب اسم الشركة أو المتجر');
   const phone = syPhone(b.phone);
   need(phone, 400, 'اكتب رقم موبايل سوري صحيح، متل 0912345678');
   const pw = String(b.password || '');
   need(pw.length >= 8, 400, 'كلمة السر لازم تكون 8 أحرف أو أكتر');
   need(pw === String(b.password2 || ''), 400, 'كلمة السر والتأكيد مو متل بعض');
   need(!q.get('SELECT 1 FROM users WHERE phone = ?', phone), 409, 'هالرقم إلو حساب من قبل، ادخل فيه');
-  const shop = localPhone(phone); // اسم مبدئي، بيغيّرو من الملف الشخصي
   const userId = tx(() => {
-    const t = q.run('INSERT INTO tenants (name, settings, knowledge) VALUES (?, ?, ?)', shop,
+    const t = q.run('INSERT INTO tenants (name, settings, knowledge) VALUES (?, ?, ?)', shopName,
       JSON.stringify({ ...DEFAULT_SETTINGS, cloud_verify_token: crypto.randomBytes(12).toString('hex') }),
-      JSON.stringify({ ...DEFAULT_KNOWLEDGE }));
+      JSON.stringify({ ...DEFAULT_KNOWLEDGE, business_name: shopName }));
     const u = q.run('INSERT INTO users (tenant_id, email, phone, name, pass_hash, role, is_super) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      t.lastInsertRowid, phone + PHONE_MAIL, phone, '', hashPassword(pw), 'owner', first ? 1 : 0);
+      t.lastInsertRowid, phone + PHONE_MAIL, phone, fullName, hashPassword(pw), 'owner', first ? 1 : 0);
     if (!first) q.run('UPDATE tenants SET bot_enabled = 0 WHERE id = ?', t.lastInsertRowid);
     return Number(u.lastInsertRowid);
   });

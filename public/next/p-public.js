@@ -157,7 +157,9 @@ export async function register(view) {
     <a class="brand" href="#/" style="padding:0"><img src="/icon.svg" alt=""><span><b>K FAST AI</b></span></a>
     <div><h2>اعمل حسابك</h2><p class="muted">بعدها بتختار الخدمة يلي بدك ياها وبتشترك فيها.</p></div>
     <form class="stack" data-f>
-      <div class="field"><label for="ph">رقم موبايلك</label><input class="input" id="ph" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="09xxxxxxxx" required dir="ltr" autofocus><span class="hint">رقم سوري. بتدخل فيه لحسابك بعدين.</span></div>
+      <div class="field"><label for="nm">اسمك الثلاثي</label><input class="input" id="nm" name="name" autocomplete="name" required maxlength="80" placeholder="الاسم، اسم الأب، الكنية" autofocus></div>
+      <div class="field"><label for="bn">اسم الشركة أو المتجر</label><input class="input" id="bn" name="business_name" autocomplete="organization" required maxlength="120"></div>
+      <div class="field"><label for="ph">رقم موبايلك</label><input class="input" id="ph" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="09xxxxxxxx" required dir="ltr"><span class="hint">رقم سوري. بتدخل فيه لحسابك بعدين.</span></div>
       <div class="field"><label for="pw">كلمة السر</label><input class="input" id="pw" name="password" type="password" autocomplete="new-password" minlength="8" required dir="ltr"><span class="hint">8 أحرف أو أكتر</span></div>
       <div class="field"><label for="pw2">عيد كلمة السر</label><input class="input" id="pw2" name="password2" type="password" autocomplete="new-password" minlength="8" required dir="ltr"></div>
       <button class="btn btn-primary btn-lg btn-block" type="submit">اعمل الحساب</button>
@@ -169,7 +171,7 @@ export async function register(view) {
     await busy(f.querySelector('[type=submit]'), async () => {
       try {
         if (f.password.value !== f.password2.value) { fail(new Error('كلمة السر والتأكيد مو متل بعض')); f.password2.focus(); return; }
-        await api('/api/v2/auth/register', { method: 'POST', body: { phone: f.phone.value, password: f.password.value, password2: f.password2.value } });
+        await api('/api/v2/auth/register', { method: 'POST', body: { name: f.name.value, business_name: f.business_name.value, phone: f.phone.value, password: f.password.value, password2: f.password2.value } });
         await loadMe(); connectLive(); go('/whatsapp?welcome=1', true);
       } catch (err) { fail(err); }
     });
