@@ -274,7 +274,7 @@ r.get('/api/v2/billing', ctx => {
   return {
     plans: plansWithPrices(), services: listServices(), mine: servicesFor(t.id), responder: responderState(t),
     shamcash_number: getSetting('shamcash_number', ''), shamcash_name: getSetting('shamcash_name', ''), shamcash_qr: getSetting('shamcash_qr', ''),
-    cash_address: getSetting('cash_address', 'دمشق - قدسيا - خلف البلدية'), instructions: getSetting('payment_instructions', ''),
+    cash_address: getSetting('cash_address', 'دمشق - قدسيا - خلف البلدية'), receipts_whatsapp: getSetting('receipts_whatsapp', '0938986875'), instructions: getSetting('payment_instructions', ''),
     requests: q.all('SELECT id, plan_id, service_id, months, method, status, amount, receipt, phone, created_at FROM payment_requests WHERE tenant_id = ? ORDER BY id DESC LIMIT 30', t.id)
       .map(p => ({ ...p, name: names[p.service_id || p.plan_id] || p.plan_id }))
   };
@@ -303,14 +303,15 @@ r.post('/api/v2/billing/request', ctx => {
   need(['shamcash', 'hand'].includes(method), 400, 'اختار طريقة الدفع');
   need(rateLimit('pay:' + ctx.tenant.id, 8, 3600_000), 429, 'استنى شوي وجرّب');
   let receiptUrl = null, ph = null, status = 'pending';
-  if (method === 'shamcash') {
+  if (method === 'shamcash') { // الإيصال صار ينبعت على واتساب المنصة (مو رفع بالموقع)
     const m = String(receipt || '').match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/);
-    need(m, 400, 'ارفع صورة الإيصال');
+    if (m) {
     const buf = Buffer.from(m[2], 'base64');
     need(buf.length < 5 * 1024 * 1024, 400, 'الصورة أكبر من 5 ميغا');
     const name = `${ctx.tenant.id}-rcpt-${crypto.randomBytes(8).toString('hex')}.${m[1].replace('jpeg', 'jpg')}`;
     fs.writeFileSync(path.join(DATA_DIR, 'uploads', name), buf);
     receiptUrl = `/uploads/${name}`;
+    }
   } else {
     ph = String(phone || '').replace(/[^\d+]/g, '');
     need(ph.replace(/\D/g, '').length >= 8, 400, 'اكتب رقم موبايلك');

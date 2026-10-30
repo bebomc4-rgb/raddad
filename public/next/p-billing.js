@@ -11,6 +11,7 @@ let cache = null;
 async function billingData() { cache = await api('/api/v2/billing'); return cache; }
 
 // نافذة الدفع (بتنفتح من أي صفحة)
+const waLink = (num, text) => `https://wa.me/${('963' + String(num || '').replace(/\D/g, '').replace(/^(00963|963|0)/, ''))}?text=${encodeURIComponent(text)}`;
 export async function checkout({ kind, id, months, onDone }) {
   const b = cache || await billingData();
   let item, price, cur = 'USD', title;
@@ -28,7 +29,7 @@ export async function checkout({ kind, id, months, onDone }) {
     body: html`<div class="stack">
       <div class="card flat" style="background:var(--surface-2)"><div class="row between"><span><b>${title}</b><br><span class="small muted">${periodName(months)}</span></span><span class="price">${money(price, cur)}</span></div></div>
       <div class="field"><label>طريقة الدفع</label><div class="choices" data-methods>
-        ${b.shamcash_number ? html`<button type="button" class="choice ${method === 'shamcash' ? 'on' : ''}" data-m="shamcash"><div class="t">شام كاش</div><div class="small muted">بتحوّل وبترفع صورة الإيصال</div></button>` : ''}
+        ${b.shamcash_number ? html`<button type="button" class="choice ${method === 'shamcash' ? 'on' : ''}" data-m="shamcash"><div class="t">شام كاش</div><div class="small muted">بتحوّل وبتبعت صورة التحويل</div></button>` : ''}
         <button type="button" class="choice ${method === 'hand' ? 'on' : ''}" data-m="hand"><div class="t">كاش بالمركز</div><div class="small muted">${b.cash_address || 'دمشق - قدسيا - خلف البلدية'}</div></button></div></div>
       <div data-method-body></div>
       ${b.instructions ? html`<div class="note info">${ic('info')}<span style="white-space:pre-wrap">${b.instructions}</span></div>` : ''}
@@ -40,8 +41,10 @@ export async function checkout({ kind, id, months, onDone }) {
         m.querySelectorAll('[data-methods] .choice').forEach(c => c.classList.toggle('on', c.dataset.m === method));
         mb.innerHTML = str(method === 'shamcash' ? html`<div class="stack-sm">
           ${b.shamcash_qr ? html`<div class="sc-qr"><img src="${b.shamcash_qr}" alt="باركود شام كاش"><span class="small muted">امسح الباركود من تطبيق شام كاش</span></div>` : ''}
-          <ol class="howto"><li><span>حوّل <b>${money(price, cur)}</b>${b.shamcash_name ? html` لـ <b>${b.shamcash_name}</b>` : ''}، بمسح الباركود أو بنسخ الكود:<br><b class="num sc-code" dir="ltr">${b.shamcash_number}</b> <button type="button" class="btn btn-sm btn-ghost" data-copy="${b.shamcash_number}">${ic('copy')} نسخ</button></span></li><li><span>صوّر الإيصال وارفعو هون</span></li></ol>
-          <label class="drop" data-drop>${receipt ? html`<img src="${receipt}" alt="" style="max-height:180px;margin:auto;border-radius:12px">` : html`<div class="stack-sm" style="align-items:center">${ic('upload')}<b>اختار صورة الإيصال</b><span class="small muted">أو اسحبها لهون</span></div>`}<input type="file" accept="image/*"></label></div>`
+          <ol class="howto"><li><span>حوّل <b>${money(price, cur)}</b>${b.shamcash_name ? html` لـ <b>${b.shamcash_name}</b>` : ''}، بمسح الباركود أو بنسخ الكود:<br><b class="num sc-code" dir="ltr">${b.shamcash_number}</b> <button type="button" class="btn btn-sm btn-ghost" data-copy="${b.shamcash_number}">${ic('copy')} نسخ</button></span></li>
+            <li><span>ابعت صورة التحويل على واتساب رقمنا <b class="num" dir="ltr">${b.receipts_whatsapp}</b></span></li>
+            <li><span>اكبس «أرسل الطلب»، ومنفعّلك أول ما نتأكد</span></li></ol>
+          <a class="btn btn-ok btn-block" target="_blank" rel="noopener" href="${waLink(b.receipts_whatsapp, `مرحبا، حوّلت ${money(price, cur)} على شام كاش لاشتراك «${title}». هي صورة التحويل:`)}">${ic('wa')} ابعت صورة التحويل على واتساب</a></div>`
           : html`<div class="stack-sm"><div class="note info">${ic('pin')}<span>بتدفع <b>${money(price, cur)}</b> كاش بمركزنا: <b>${b.cash_address || 'دمشق - قدسيا - خلف البلدية'}</b>. ومنفعّلك أول ما نستلم.</span></div>
             <div class="field"><label>رقم موبايلك لنتواصل معك</label><input class="input" data-phone inputmode="tel" dir="ltr" placeholder="09xxxxxxxx"></div></div>`);
       };
@@ -60,9 +63,8 @@ export async function checkout({ kind, id, months, onDone }) {
       m.querySelector('[data-send]').onclick = e => busy(e.currentTarget, async () => {
         try {
           const phone = m.querySelector('[data-phone]')?.value;
-          if (method === 'shamcash' && !receipt) throw new Error('ارفع صورة الإيصال أول');
           await api('/api/v2/billing/request', { method: 'POST', body: { kind, id, months, method, receipt, phone } });
-          close(); toast('وصل طلبك ✓ منفعّلك أول ما يتأكد الدفع'); refreshMe(); onDone?.();
+          close(); toast(method === 'shamcash' ? 'وصل طلبك ✓ لا تنسى تبعت صورة التحويل على واتساب' : 'وصل طلبك ✓ منفعّلك أول ما نستلم'); refreshMe(); onDone?.();
         } catch (err) { fail(err); }
       });
     }
