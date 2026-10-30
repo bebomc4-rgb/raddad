@@ -14,6 +14,7 @@ import { getTenant, getPlan, brand, safeJSON, ensureSlug, PERIODS, priceFor, sub
 import { trialStatus, trialSeconds } from './trial.js';
 import * as wa from './whatsapp/index.js';
 import * as qrConn from './whatsapp/baileys.js';
+import { oldWindow } from './services.js';
 import { listServices, servicesFor, serviceExists, priceForService, grantService, revokeService, setPaused, saveServices, hasService, SERVICE_PERIODS, isSuperTenant } from './services.js';
 
 const r = router;
@@ -345,6 +346,8 @@ r.post('/api/csync/import', ctx => {
   owner(ctx);
   // بتنقبل حتى قبل الاشتراك: بتنحفظ عندنا، وبتبلّش تنحفظ بجهات الاتصال أول ما ينفعّل «حفظ كل الأرقام القديمة»
   need(rateLimit('csimp:' + ctx.tenant.id, 6, 3600_000), 429, 'جرّبت كتير، استنى شوي');
+  const w = oldWindow(ctx.tenant.id);
+  need(!w.owned || w.open, 403, 'خلصت مهلة الـ 24 ساعة لرفع النسخة الاحتياطية. إذا بدك تعيد، اطلب تفعيل جديد.');
   const nums = Array.isArray(ctx.body.numbers) ? ctx.body.numbers.slice(0, 60000) : [];
   need(nums.length, 400, 'ما في أرقام');
   const out = qrConn.importNumbers(ctx.tenant.id, nums);

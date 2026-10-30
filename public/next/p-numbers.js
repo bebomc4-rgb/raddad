@@ -13,6 +13,7 @@ export async function numbers(view) {
     const linked = wa.status === 'open';
     const prefix = prefixDraft ?? d.prefix;
     const sNew = sv.contacts_new, sOld = sv.contacts_old;
+    const nowS = Date.now() / 1000, winOpen = sOld.owned && sOld.window_ends_at && nowS < sOld.window_ends_at, winOver = sOld.owned && sOld.window_ends_at && nowS >= sOld.window_ends_at;
     view.html(html`<div class="stack">
       ${!linked ? html`<div class="banner">${ic('wa')}<span class="grow">واتسابك مو مربوط. الأرقام بتبلّش تنحفظ أول ما تربطو.</span><a class="btn btn-sm btn-primary" href="#/whatsapp">اربط هلق</a></div>` : ''}
 
@@ -38,12 +39,12 @@ export async function numbers(view) {
 
         <div class="card pad-lg stack ${sOld.owned ? '' : 'premium'}">
           <div class="row between"><span class="row nowrap"><span class="ico lg gold">${ic('history')}</span><span><h3>كل الأرقام القديمة</h3><span class="small muted">دفعة وحدة، من سنين لهلق</span></span></span>${sOld.owned ? html`<span class="pill ok">مدفوعة</span>` : html`<span class="pill gold plain">${ic('crown')} دفعة وحدة</span>`}</div>
-          ${st.history ? html`<div class="row between"><span class="small muted">أرقام قديمة جاهزة عنا</span><b class="num">${n(st.history)}</b></div>` : ''}
+          ${st.history ? html`<div class="row between"><span class="small muted">أرقام من نسختك الاحتياطية</span><b class="num">${n(st.history)}</b></div>` : ''}
+          ${winOpen ? html`<div class="note warn">${ic('clock')}<span class="grow">باقيلك <b>${left(sOld.window_ends_at)}</b> لترفع نسختك الاحتياطية. بعدها بتسكّر.</span></div>`
+            : winOver ? html`<div class="note">${ic('lock')}<span class="grow">خلصت مهلة الـ 24 ساعة لرفع النسخة الاحتياطية.</span></div>` : ''}
           <div class="list">
-            <div class="item"><span class="ico">${ic('link')}</span><span class="grow"><span class="t">من ربط الواتس</span><br><span class="s">أوتوماتيك: واتساب بيبعت محادثاتك وقت الربط</span></span>
-              ${sOld.owned && st.history ? html`<button class="btn btn-sm" data-link-now>احفظ الجاهزين</button>` : ''}</div>
-            <div class="item"><span class="ico gold">${ic('key')}</span><span class="grow"><span class="t">من النسخة الاحتياطية</span><br><span class="s">كل الأرقام من أول ما فتحت واتساب</span></span>
-              <a class="btn btn-sm ${sOld.owned ? 'btn-gold' : ''}" href="#/numbers/backup">${sOld.owned ? 'ابدأ' : 'شوف كم رقم عندك'}</a></div>
+            <div class="item"><span class="ico gold">${ic('key')}</span><span class="grow"><span class="t">من النسخة الاحتياطية</span><br><span class="s">كل الأرقام من أول ما فتحت واتساب. بعد الشرا معك 24 ساعة لترفعها.</span></span>
+              ${winOver ? '' : html`<a class="btn btn-sm ${sOld.owned ? 'btn-gold' : ''}" href="#/numbers/backup">${sOld.owned ? 'ابدأ' : 'شوف كم رقم عندك'}</a>`}</div>
           </div>
           ${sOld.owned ? '' : html`<button class="btn btn-gold" data-buy-old>${ic('crown')} اشترك بدفعة وحدة</button>`}
         </div>

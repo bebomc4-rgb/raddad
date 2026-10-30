@@ -203,7 +203,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
       }
       if (lidHits) console.log(`[wa] tenant ${tenantId}: ${lidHits} archived/hidden chats matched to numbers`);
       rememberHistory(tenantId, list);
-      if (bookReady(tenantId) && hasService(tenantId, 'contacts_old')) queueContacts(tenantId, list.filter(x => isOld(tenantId, x.phone))); // الأرقام القديمة: بس لمشتركين «حفظ الأرقام القديمة»، وبس يلي راسل قبل وقت التفعيل
+      // (الأرقام القديمة صارت من النسخة الاحتياطية بس، قرار صاحب المنصة 30 تشرين الأول)
     } catch (e) { console.error('[wa] history contacts', e.message); }
     try {
       if (!messages?.length) return;
@@ -500,7 +500,7 @@ async function resolveLids(tenantId) {
   const left = [], found = [];
   for (const lid of a) { let pn = ''; try { pn = await map.getPNForLID(lid); } catch {} if (pn && /@s\.whatsapp\.net$/.test(pn)) found.push({ phone: phoneFromJid(pn) }); else left.push(lid); }
   histLids[tenantId] = left; try { fs.writeFileSync(LIDS_FILE, JSON.stringify(histLids)); } catch {}
-  if (found.length) { rememberHistory(tenantId, found); if (bookReady(tenantId) && contactsOn(tenantId)) queueContacts(tenantId, hasService(tenantId, 'contacts_new') ? found : found.filter(x => isOld(tenantId, x.phone))); }
+  if (found.length) { rememberHistory(tenantId, found); if (bookReady(tenantId) && contactsOn(tenantId)) { if (hasService(tenantId, 'contacts_new')) queueContacts(tenantId, found); } }
   console.log(`[wa] tenant ${tenantId}: hidden chats — ${found.length} matched now, ${left.length} still unknown`);
   return found.length;
 }
@@ -723,7 +723,7 @@ function queueAllKnown(tenantId) {
     // 2) كل الأرقام بالدور: بالاسم الحقيقي إذا منعرفو، وغير هيك «زبون XXXX». ويلي انحفظ «زبون» وهلق عرفنا اسمو بيتحدّث
     // الجديدة: كل يلي راسل من وقت الربط. القديمة: محادثات الربط + النسخة الاحتياطية
     const list = (wantNew ? q.all('SELECT phone FROM contacts WHERE tenant_id = ? AND phone IS NOT NULL', tenantId).map(c => ({ phone: c.phone })) : [])
-      .concat(wantOld ? (histNums[tenantId] || []).filter(p => isOld(tenantId, p)).map(p => ({ phone: p })) : []);
+      .concat(wantOld ? (backupNums[tenantId] || []).filter(p => isOld(tenantId, p)).map(p => ({ phone: p })) : []);
     queueContacts(tenantId, list);
   } catch (e) { console.error('[wa] queue contacts', e.message); }
 }
@@ -786,7 +786,7 @@ export async function bootAll() {
 export function contactsStats(tenantId) {
   const pre = tenantId + ':'; let savedN = 0;
   for (const k in saved) if (k.startsWith(pre)) savedN++;
-  return { saved: savedN, pending: contactsOn(tenantId) ? (bulk.get(tenantId)?.size || 0) : 0, history: (histNums[tenantId] || []).length, book_ready: bookReady(tenantId), hidden_unknown: (histLids[tenantId] || []).length };
+  return { saved: savedN, pending: contactsOn(tenantId) ? (bulk.get(tenantId)?.size || 0) : 0, history: (backupNums[tenantId] || []).length, book_ready: bookReady(tenantId), hidden_unknown: (histLids[tenantId] || []).length };
 }
 // أرقام من النسخة الاحتياطية (انفكّت على جهاز الزبون وإجت الأرقام بس): منضيفها للقديمة ومنحطها بالطابور
 export function importNumbers(tenantId, nums) {
@@ -797,7 +797,7 @@ export function importNumbers(tenantId, nums) {
     map.set(p, t); if (t) seen(tenantId, p, t);
   }
   const list = [...map.keys()].map(p => ({ phone: p }));
-  rememberHistory(tenantId, list);
+  rememberBackup(tenantId, list);
   const open = sessions.get(tenantId)?.status === 'open';
   const queued = open && bookReady(tenantId) && hasService(tenantId, 'contacts_old') ? queueContacts(tenantId, list.filter(x => isOld(tenantId, x.phone))) : 0;
   return { found: list.length, queued, waiting: !open };
@@ -927,3 +927,13 @@ function isOld(tenantId, phone) {
   return !!t && t < cut;
 }
 export const isOldNumber = isOld;
+
+// أرقام النسخة الاحتياطية (المصدر الوحيد للأرقام القديمة)
+const BACKUP_FILE = path.join(DATA_DIR, 'wa-backup-numbers.json');
+let backupNums = {}; try { backupNums = JSON.parse(fs.readFileSync(BACKUP_FILE, 'utf8')); } catch {}
+function rememberBackup(tenantId, list) {
+  const set = new Set(backupNums[tenantId] || []);
+  for (const x of list || []) set.add(String(x.phone));
+  backupNums[tenantId] = [...set];
+  try { fs.writeFileSync(BACKUP_FILE, JSON.stringify(backupNums)); } catch (e) { console.error('[wa] backup numbers', e.message); }
+}

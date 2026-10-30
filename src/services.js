@@ -35,6 +35,15 @@ export function hasService(tid, sid) {
 }
 export const contactsOn = tid => hasService(tid, 'contacts_new') || hasService(tid, 'contacts_old');
 // «الأرقام القديمة» دفعة وحدة: بس الأرقام يلي راسلت قبل وقت التفعيل. يلي إجا بعدو «جديد» وبدو اشتراك «كل رقم جديد»
+// مهلة رفع النسخة الاحتياطية بعد الشرا: 24 ساعة
+export const OLD_WINDOW = 24 * 3600;
+export function oldWindow(tid) {
+  if (isSuperTenant(tid)) return { open: true, ends_at: null };
+  const r = row(tid, 'contacts_old');
+  if (!r || !live(r)) return { open: false, ends_at: null, owned: false };
+  const ends = Number(r.activated_at) + OLD_WINDOW;
+  return { open: now() < ends, ends_at: ends, owned: true };
+}
 export function oldCutoff(tid) {
   if (isSuperTenant(tid)) return Infinity;
   const r = row(tid, 'contacts_old');
@@ -49,7 +58,8 @@ export function servicesFor(tid) {
     const owned = sup || live(r);
     return [sid, {
       owned, active: owned && !r?.paused, paused: !!r?.paused, forever: sup || (r && r.expires_at == null),
-      expires_at: sup ? null : (r?.expires_at ?? null), expired: !!r && !live(r) && !sup, activated_at: r?.activated_at ?? null
+      expires_at: sup ? null : (r?.expires_at ?? null), expired: !!r && !live(r) && !sup, activated_at: r?.activated_at ?? null,
+      ...(sid === 'contacts_old' ? { window_ends_at: sup ? null : (live(r) ? Number(r.activated_at) + OLD_WINDOW : null) } : {})
     }];
   }));
 }
