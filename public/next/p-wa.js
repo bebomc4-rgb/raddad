@@ -75,6 +75,21 @@ export async function chats(view) {
     if (!msgs.length) html2 += '<div class="wa-day">ما في رسائل محفوظة بهالمحادثة لسا</div>';
     box.innerHTML = html2;
     box.scrollTop = keepScroll ? box.scrollHeight - before : box.scrollHeight;
+    watchImages(box);
+  };
+  // الصور والملصقات بتنزل لحالها لما تبيّن عالشاشة (وحدة ورا وحدة، 3 سوا)
+  let io = null, queue = [], running = 0;
+  const pump = () => {
+    while (running < 3 && queue.length) {
+      const b = queue.shift(); if (!b.isConnected || b.dataset.busy) continue;
+      running++; loadMedia(b, true).finally(() => { running--; pump(); });
+    }
+  };
+  const watchImages = box => {
+    io?.disconnect(); queue = [];
+    if (!('IntersectionObserver' in window)) return;
+    io = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) { io.unobserve(e.target); queue.push(e.target); } pump(); }, { root: box, rootMargin: '300px' });
+    box.querySelectorAll('[data-media][data-kind="img"]').forEach(b => io.observe(b));
   };
   const openChat = async jid => {
     cur = list.find(c => c.jid === jid) || { jid, name: '', phone: '', is_group: jid.endsWith('@g.us') };
@@ -115,18 +130,24 @@ export async function chats(view) {
     try { const r = await api(`/api/v2/wa/messages?jid=${encodeURIComponent(cur.jid)}&before=${msgs[0].ts}&limit=50`); msgs = r.messages.concat(msgs); more = r.messages.length === 50; paintMsgs(true); }
     catch (err) { fail(err); } finally { loading = false; }
   });
-  view.on('click', '[data-media]', async (e, b) => {
+  async function loadMedia(b, quiet = false) {
     if (b.dataset.busy) return; b.dataset.busy = '1';
     const kind = b.dataset.kind, old = b.innerHTML;
-    if (kind !== 'img' && kind !== 'video') b.textContent = 'عم ينزّل…';
+    if (kind !== 'video') b.classList.add('loading');
+    if (kind === 'audio' || kind === 'doc') b.textContent = 'عم ينزّل…';
     try {
       const { url } = await api('/api/v2/wa/media', { method: 'POST', body: { jid: cur.jid, id: b.dataset.media } });
-      if (kind === 'img') b.outerHTML = `<a class="wa-img full" href="${url}" target="_blank" rel="noopener"><img src="${url}" alt=""></a>`;
-      else if (kind === 'video') b.outerHTML = `<video class="wa-video" src="${url}" controls autoplay playsinline></video>`;
-      else if (kind === 'audio') b.outerHTML = `<audio class="wa-aud" src="${url}" controls autoplay></audio>`;
-      else { b.innerHTML = old; delete b.dataset.busy; window.open(url, '_blank', 'noopener'); }
-    } catch (err) { b.innerHTML = old; delete b.dataset.busy; fail(err); }
-  });
+      if (kind === 'img') b.outerHTML = `<a class="wa-img full" href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="" loading="lazy"></a>`;
+      else if (kind === 'video') b.outerHTML = `<video class="wa-video" src="${url}" controls ${quiet ? '' : 'autoplay'} playsinline></video>`;
+      else if (kind === 'audio') b.outerHTML = `<audio class="wa-aud" src="${url}" controls ${quiet ? '' : 'autoplay'}></audio>`;
+      else { b.innerHTML = old; b.classList.remove('loading'); delete b.dataset.busy; window.open(url, '_blank', 'noopener'); }
+    } catch (err) {
+      b.classList.remove('loading');
+      if (quiet && kind === 'img') { b.innerHTML = `<span class="wa-ph">🖼️ الصورة ما عاد موجودة<br><small>${esc(err.message || '')}</small></span>`; b.dataset.busy = 'x'; return; }
+      b.innerHTML = old; delete b.dataset.busy; fail(err);
+    }
+  }
+  view.on('click', '[data-media]', (e, b) => loadMedia(b));
   const send = async (body, form) => {
     try { await api('/api/v2/wa/send', { method: 'POST', body: { jid: cur.jid, ...body } }); if (form) form.t.value = ''; setTimeout(refreshChat, 900); setTimeout(() => loadList(), 1500); }
     catch (err) { fail(err); }
@@ -138,4 +159,5 @@ export async function chats(view) {
   let rt = null;
   view.sub('wa_msg', d => { clearTimeout(rt); rt = setTimeout(() => { loadList(); if (cur && (!d?.jids || d.jids.includes(cur.jid))) refreshChat(); }, 600); });
   view.every(30000, () => loadList());
+  view.cleanup(() => io?.disconnect());
 }

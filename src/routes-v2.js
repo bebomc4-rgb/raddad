@@ -224,7 +224,8 @@ r.post('/api/v2/wa/read', async ctx => {
 });
 r.post('/api/v2/wa/media', async ctx => {
   owner(ctx); const jid = String(ctx.body.jid || ''); need(okJid(jid), 400, 'محادثة غلط');
-  try { return { url: await qrConn.mirrorMedia(ctx.tenant.id, jid, String(ctx.body.id || '')) }; } catch (e) { throw new HttpError(400, e.message); }
+  try { return { url: await qrConn.mirrorMedia(ctx.tenant.id, jid, String(ctx.body.id || '')) }; }
+  catch (e) { console.error(`[mirror] media t${ctx.tenant.id} ${jid} ${ctx.body.id}: ${e.message}`); throw new HttpError(400, /40[34]|410|gone|not found/i.test(e.message) ? 'هالملف ما عاد موجود عند واتساب ولا على موبايل صاحبو' : e.message); }
 });
 r.post('/api/v2/wa/send', async ctx => {
   owner(ctx); const jid = String(ctx.body.jid || ''); need(okJid(jid), 400, 'محادثة غلط');

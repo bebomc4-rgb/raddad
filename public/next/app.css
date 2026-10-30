@@ -493,3 +493,4 @@ kbd { font-family: inherit; font-size: 12.5px; padding: 1px 8px; border-radius: 
   .wa .wa-chat { display: none; } .wa.show-chat .wa-list { display: none; } .wa.show-chat .wa-chat { display: flex; }
   .wa-back { display: inline-flex; } .wa-msgs { padding: 12px 10px; } .wa-b { max-width: 86%; }
 }
+.wa-img.loading { opacity: .6; } .wa-img.loading .wa-ph::after { content: " …"; }

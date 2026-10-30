@@ -111,6 +111,7 @@ function manage(t, plans, done) {
         const b = e.target.closest('[data-svc]');
         if (b) {
           if (b.dataset.svc === 'revoke' && !await confirmBox('رح تنلغى الخدمة عن هالمشترك.', { ok: 'إلغاء الخدمة', danger: true })) return;
+          if (b.dataset.svc === 'grant' && !await confirmBox(`رح تفعّل «${b.dataset.sid === 'contacts_old' ? 'حفظ الأرقام القديمة' : 'حفظ كل رقم جديد'}» لـ ${t.name}. ${b.dataset.sid === 'contacts_old' ? 'كل أرقام محادثاتو القديمة رح تنحفظ بجهات اتصال موبايلو فوراً.' : 'كل رقم جديد رح ينحفظ بجهات اتصال موبايلو.'} متأكد؟`, { ok: 'إي فعّل' })) return;
           const pv = m.querySelector(`[data-months="${b.dataset.sid}"]`)?.value || '0';
           const per = pv.startsWith('d') ? { days: Number(pv.slice(1)) } : { months: Number(pv) };
           busy(b, async () => { try { await api(`/api/admin/v2/tenants/${t.id}/service`, { method: 'POST', body: { service_id: b.dataset.sid, action: b.dataset.svc, ...per } }); await after(b.dataset.svc === 'grant' ? 'تفعّلت ✓' : 'انلغت'); } catch (err) { fail(err); } });
