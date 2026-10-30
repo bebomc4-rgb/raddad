@@ -22,12 +22,16 @@ export async function checkout({ kind, id, months, onDone }) {
     item = b.plans.find(p => p.id === id); if (!item) return fail(new Error('الباقة مو موجودة'));
     price = item.prices[months]; cur = item.currency; title = `المجيب الذكي — ${item.name}`;
   }
+  // كل المدد يلي إلها سعر (شهر، 3، 6، سنة): الزبون بيختار
+  const periods = Object.keys(item.prices || {}).map(Number).filter(m => m > 0 && item.prices[m] != null).sort((a, b2) => a - b2);
+  if (price == null && periods.length) { months = periods[0]; price = item.prices[months]; }
   if (price == null) return fail(new Error('سعر هالمدة لسا ما انحدد. تواصل معنا.'));
   let method = b.shamcash_number ? 'shamcash' : 'hand', receipt = null;
   modal({
     title: 'تأكيد الاشتراك',
     body: html`<div class="stack">
-      <div class="card flat" style="background:var(--surface-2)"><div class="row between"><span><b>${title}</b><br><span class="small muted">${periodName(months)}</span></span><span class="price">${money(price, cur)}</span></div></div>
+      ${periods.length > 1 ? html`<div class="field"><label>المدة</label><div class="choices period-pick" data-periods>${periods.map(m => html`<button type="button" class="choice ${m === months ? 'on' : ''}" data-p="${m}"><div class="t">${periodName(m)}</div><div class="small muted">${money(item.prices[m], cur)}${m > 1 && item.prices[1] ? html` · ${money(Math.round(item.prices[m] / m * 100) / 100, cur)} بالشهر` : ''}</div></button>`)}</div></div>` : ''}
+      <div class="card flat" style="background:var(--surface-2)" data-sum></div>
       <div class="field"><label>طريقة الدفع</label><div class="choices" data-methods>
         ${b.shamcash_number ? html`<button type="button" class="choice ${method === 'shamcash' ? 'on' : ''}" data-m="shamcash"><div class="t">شام كاش</div><div class="small muted">بتحوّل وبتبعت صورة التحويل</div></button>` : ''}
         <button type="button" class="choice ${method === 'hand' ? 'on' : ''}" data-m="hand"><div class="t">كاش بالمركز</div><div class="small muted">${b.cash_address || 'دمشق - قدسيا - خلف البلدية'}</div></button></div></div>
@@ -37,6 +41,9 @@ export async function checkout({ kind, id, months, onDone }) {
     foot: html`<button class="btn" data-cancel>رجوع</button><button class="btn btn-primary" data-send>أرسل الطلب</button>`,
     onMount(m, close) {
       const mb = m.querySelector('[data-method-body]');
+      const sum = () => { m.querySelector('[data-sum]').innerHTML = str(html`<div class="row between"><span><b>${title}</b><br><span class="small muted">${periodName(months)}</span></span><span class="price">${money(price, cur)}</span></div>`); };
+      sum();
+      m.addEventListener('click', e => { const pp = e.target.closest('[data-periods] .choice'); if (!pp) return; months = Number(pp.dataset.p); price = item.prices[months]; m.querySelectorAll('[data-periods] .choice').forEach(c => c.classList.toggle('on', c === pp)); sum(); paint(); });
       const paint = () => {
         m.querySelectorAll('[data-methods] .choice').forEach(c => c.classList.toggle('on', c.dataset.m === method));
         mb.innerHTML = str(method === 'shamcash' ? html`<div class="stack-sm">

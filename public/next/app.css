@@ -496,3 +496,4 @@ kbd { font-family: inherit; font-size: 12.5px; padding: 1px 8px; border-radius: 
 .wa-img.loading { opacity: .6; } .wa-img.loading .wa-ph::after { content: " …"; }
 .sc-qr { display: flex; flex-direction: column; align-items: center; gap: 6px; } .sc-qr img { width: min(240px, 70vw); border-radius: 16px; background: #000; }
 .sc-code { word-break: break-all; font-size: 13px; }
+.period-pick { grid-template-columns: repeat(2, 1fr); }
