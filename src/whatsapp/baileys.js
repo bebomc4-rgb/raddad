@@ -685,6 +685,7 @@ export function queueContacts(tenantId, list) {
   if (!bulkTimer) bulkTimer = setInterval(async () => {
     let busy = false;
     for (const [tid, mm] of bulk) {
+      if (mm.size && !contactsOn(tid)) { mm.clear(); continue; } // الخدمة انلغت أو انوقفت: منفضّي الطابور فوراً
       const st = sessions.get(tid); if (!mm.size || st?.status !== 'open') continue;
       const [num, name] = mm.entries().next().value; mm.delete(num); busy = true;
       await saveContact(tid, num, name).catch(() => {});
@@ -783,7 +784,7 @@ export async function bootAll() {
 export function contactsStats(tenantId) {
   const pre = tenantId + ':'; let savedN = 0;
   for (const k in saved) if (k.startsWith(pre)) savedN++;
-  return { saved: savedN, pending: bulk.get(tenantId)?.size || 0, history: (histNums[tenantId] || []).length, book_ready: bookReady(tenantId), hidden_unknown: (histLids[tenantId] || []).length };
+  return { saved: savedN, pending: contactsOn(tenantId) ? (bulk.get(tenantId)?.size || 0) : 0, history: (histNums[tenantId] || []).length, book_ready: bookReady(tenantId), hidden_unknown: (histLids[tenantId] || []).length };
 }
 // أرقام من النسخة الاحتياطية (انفكّت على جهاز الزبون وإجت الأرقام بس): منضيفها للقديمة ومنحطها بالطابور
 export function importNumbers(tenantId, nums) {
