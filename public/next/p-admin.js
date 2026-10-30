@@ -1,5 +1,5 @@
 // لوحة صاحب المنصة: نظرة عامة، المدفوعات، المشتركين، الأسعار، الإعدادات، التنبيهات، والأدوات الخاصة
-import { state, api, html, ic, n, money, periodName, date, dateTime, ago, left, phoneFmt, toast, fail, busy, modal, confirmBox, str } from './core.js';
+import { state, api, html, ic, n, money, periodName, date, dateTime, ago, left, phoneFmt, toast, fail, busy, modal, confirmBox, str, readImage } from './core.js';
 import { paintNav } from './app.js';
 
 const PST = { pending: ['ناطر', 'warn'], awaiting_delivery: ['ناطر التسليم', 'warn'], approved: ['تفعّل', 'ok'], rejected: ['مرفوض', 'bad'] };
@@ -170,6 +170,10 @@ export async function platform(view) {
   view.html(html`<form class="stack" data-f style="max-width:820px">
     <div class="card pad-lg stack"><h3>${ic('card')} الدفع</h3>
       <div class="field"><label>رقم شام كاش تبعك</label><input class="input" name="shamcash_number" value="${s.shamcash_number}" dir="ltr"><span class="hint">بيبيّن للزبون لما يختار شام كاش. إذا فاضي، بيبيّن بس الدفع باليد.</span></div>
+      <div class="grid g2"><div class="field"><label>اسم صاحب حساب شام كاش</label><input class="input" name="shamcash_name" value="${s.shamcash_name || ''}"></div>
+        <div class="field"><label>عنوان الدفع كاش</label><input class="input" name="cash_address" value="${s.cash_address || ''}"></div></div>
+      <div class="field"><label>باركود شام كاش</label><div class="row" style="gap:14px;align-items:center">${s.shamcash_qr ? html`<img src="${s.shamcash_qr}" alt="" style="width:110px;border-radius:12px;background:#fff">` : html`<span class="muted small">ما في باركود</span>`}
+        <label class="btn btn-sm">${ic('upload')} ${s.shamcash_qr ? 'غيّر الباركود' : 'ارفع الباركود'}<input type="file" accept="image/*" data-qr hidden></label><input type="hidden" name="shamcash_qr" value="${s.shamcash_qr || ''}"></div></div>
       <div class="field"><label>تعليمات الدفع (اختياري)</label><textarea class="textarea" name="payment_instructions" rows="3">${s.payment_instructions}</textarea></div></div>
     <div class="card pad-lg stack"><h3>${ic('lock')} الميزات والتجربة</h3>
       <p class="muted">كل حساب جديد بيكون مقفول. إنت بتفعّل الميزات لكل مشترك، وبتعطيه تجربة مجانية إذا بدك، من «المشتركين» ← «إدارة».</p>
@@ -179,11 +183,15 @@ export async function platform(view) {
       <div class="grid g2"><div class="field"><label>اسم المنصة</label><input class="input" name="brand_name" value="${s.brand.name}"></div><div class="field"><label>اللون</label><input class="input" type="color" name="brand_color" value="${s.brand.color}" style="padding:4px;min-height:46px"></div></div>
       <div class="field"><label>الشعار النصي</label><input class="input" name="brand_tagline" value="${s.brand.tagline}"></div></div>
     <div class="row end"><button class="btn btn-primary btn-lg" type="submit">حفظ</button></div></form>`);
+  view.on('change', '[data-qr]', async (e, inp) => {
+    const file = inp.files?.[0]; if (!file) return;
+    try { const data = await readImage(file, 900); const r = await api('/api/upload', { method: 'POST', body: { data } }); await api('/api/admin/settings', { method: 'PUT', body: { shamcash_qr: r.url } }); toast('انحفظ الباركود ✓'); platform(view); } catch (err) { fail(err); }
+  });
   view.on('submit', '[data-f]', async (e, f) => {
     e.preventDefault();
     await busy(f.querySelector('[type=submit]'), async () => {
       try {
-        await api('/api/admin/settings', { method: 'PUT', body: { shamcash_number: f.shamcash_number.value, payment_instructions: f.payment_instructions.value, registration_open: f.registration_open.checked,
+        await api('/api/admin/settings', { method: 'PUT', body: { shamcash_number: f.shamcash_number.value, shamcash_name: f.shamcash_name.value, cash_address: f.cash_address.value, shamcash_qr: f.shamcash_qr.value, payment_instructions: f.payment_instructions.value, registration_open: f.registration_open.checked,
           trial: { value: Number(f.trial_value.value), unit: f.trial_unit.value }, brand: { name: f.brand_name.value, color: f.brand_color.value, tagline: f.brand_tagline.value } } });
         toast('انحفظ ✓');
       } catch (err) { fail(err); }

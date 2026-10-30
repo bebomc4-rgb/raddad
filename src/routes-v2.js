@@ -273,7 +273,8 @@ r.get('/api/v2/billing', ctx => {
   const names = Object.fromEntries([...q.all('SELECT id, name FROM plans'), ...q.all('SELECT id, name FROM services')].map(x => [x.id, x.name]));
   return {
     plans: plansWithPrices(), services: listServices(), mine: servicesFor(t.id), responder: responderState(t),
-    shamcash_number: getSetting('shamcash_number', ''), instructions: getSetting('payment_instructions', ''),
+    shamcash_number: getSetting('shamcash_number', ''), shamcash_name: getSetting('shamcash_name', ''), shamcash_qr: getSetting('shamcash_qr', ''),
+    cash_address: getSetting('cash_address', 'دمشق - قدسيا - خلف البلدية'), instructions: getSetting('payment_instructions', ''),
     requests: q.all('SELECT id, plan_id, service_id, months, method, status, amount, receipt, phone, created_at FROM payment_requests WHERE tenant_id = ? ORDER BY id DESC LIMIT 30', t.id)
       .map(p => ({ ...p, name: names[p.service_id || p.plan_id] || p.plan_id }))
   };
@@ -316,7 +317,7 @@ r.post('/api/v2/billing/request', ctx => {
     status = 'awaiting_delivery';
   }
   q.run('INSERT INTO payment_requests (tenant_id, plan_id, service_id, months, method, status, amount, receipt, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ctx.tenant.id, planId, serviceId, kind === 'service' ? ctx.body.months : months, method === 'shamcash' ? 'شام كاش' : 'تسليم باليد بقدسيا', status, amount, receiptUrl, ph);
+    ctx.tenant.id, planId, serviceId, kind === 'service' ? ctx.body.months : months, method === 'shamcash' ? 'شام كاش' : 'كاش بالمركز', status, amount, receiptUrl, ph);
   return { ok: true };
 });
 

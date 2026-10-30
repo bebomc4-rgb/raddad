@@ -321,6 +321,15 @@ const migrations = [
   UPDATE services SET description = 'كل الأرقام يلي راسلتك من أول ما فتحت واتساب، من نسختك الاحتياطية، بتنحفظ بجهات اتصالك بدفعة وحدة.',
     features = '["من النسخة الاحتياطية، من سنين لهلق","الملف بيتفك على جهازك وما بينرفع","بعد الشرا معك 24 ساعة لترفع النسخة","بدون تكرار ولا لمس للأسماء يلي حاططها إنت"]'
   WHERE id = 'contacts_old';
+  `,
+  // 17: طرق الدفع (صاحب المنصة، 30 تشرين الأول): شام كاش بالباركود، وكاش بالمركز
+  `
+  INSERT INTO platform_settings (key, value) VALUES
+    ('shamcash_number', '"575679b5faa8163d47e74d848732e601"'),
+    ('shamcash_name', '"عبد المجيد محمد ديب صالح"'),
+    ('shamcash_qr', '"/uploads/shamcash-qr.jpg"'),
+    ('cash_address', '"دمشق - قدسيا - خلف البلدية"')
+  ON CONFLICT(key) DO UPDATE SET value = excluded.value;
   `
 ];
 

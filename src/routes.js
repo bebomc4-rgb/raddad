@@ -939,13 +939,14 @@ r.get('/api/admin/settings', ctx => {
     registration_open: getSetting('registration_open', true),
     payment_instructions: getSetting('payment_instructions', ''),
     shamcash_number: getSetting('shamcash_number', ''),
+    shamcash_name: getSetting('shamcash_name', ''), shamcash_qr: getSetting('shamcash_qr', ''), cash_address: getSetting('cash_address', 'دمشق - قدسيا - خلف البلدية'),
     trial: getSetting('trial', { value: 3, unit: 'days' }),
   };
 });
 
 r.put('/api/admin/settings', ctx => {
   sup(ctx);
-  const { brand: b, registration_open, payment_instructions, shamcash_number, trial } = ctx.body;
+  const { brand: b, registration_open, payment_instructions, shamcash_number, shamcash_name, shamcash_qr, cash_address, trial } = ctx.body;
   if (b) setSetting('brand', { name: clamp(b.name || 'ردّاد', 40), tagline: clamp(b.tagline || '', 120), color: /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : '#0E7A5A' });
   if (registration_open !== undefined) setSetting('registration_open', !!registration_open);
   if (payment_instructions !== undefined) setSetting('payment_instructions', clamp(payment_instructions, 3000));
@@ -953,7 +954,10 @@ r.put('/api/admin/settings', ctx => {
     need(['days', 'hours'].includes(trial.unit) && Number(trial.value) > 0, 400, 'مدة التجربة غير صحيحة');
     setSetting('trial', { value: Math.min(3650, Number(trial.value)), unit: trial.unit });
   }
-  if (shamcash_number !== undefined) setSetting('shamcash_number', clamp(shamcash_number, 40));
+  if (shamcash_number !== undefined) setSetting('shamcash_number', clamp(shamcash_number, 80));
+  if (shamcash_name !== undefined) setSetting('shamcash_name', clamp(shamcash_name, 80));
+  if (shamcash_qr !== undefined) { need(!shamcash_qr || /^\/uploads\/[\w.-]+$/.test(shamcash_qr), 400, 'صورة الباركود غلط'); setSetting('shamcash_qr', shamcash_qr); }
+  if (cash_address !== undefined) setSetting('cash_address', clamp(cash_address, 200));
   return { ok: true };
 });
 
