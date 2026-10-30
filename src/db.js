@@ -335,6 +335,13 @@ const migrations = [
   `
   INSERT INTO service_prices (service_id, months, price) VALUES ('contacts_new', 1, 10), ('contacts_new', 3, 25), ('contacts_new', 6, 35), ('contacts_new', 12, 50)
   ON CONFLICT(service_id, months) DO UPDATE SET price = excluded.price;
+  `,
+  // 19: سعر المجيب (صاحب المنصة: شهر 30$، سنة 210$، والباقي بالنص). الردود صارت بلا حدود، فباقة وحدة بتكفي: «أعمال» بتختفي من العرض
+  `
+  UPDATE plans SET price_monthly = 30 WHERE id = 'pro';
+  INSERT INTO plan_prices (plan_id, months, price) VALUES ('pro', 1, 30), ('pro', 3, 80), ('pro', 6, 140), ('pro', 12, 210)
+  ON CONFLICT(plan_id, months) DO UPDATE SET price = excluded.price;
+  UPDATE plans SET is_public = 0 WHERE id = 'business';
   `
 ];
 
