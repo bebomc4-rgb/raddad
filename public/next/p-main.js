@@ -111,7 +111,7 @@ export async function whatsapp(view) {
         <div class="wa-big">${ic('wa')}</div><h2>واتسابك مربوط ✓</h2>
         <p class="muted">الرقم: <b class="num">${phoneFmt(wa.phone)}</b></p>
         <div class="note info" style="text-align:start">${ic('info')}<span>خلّي موبايلك متصل بالنت. إذا انطفى موبايلك فترة طويلة، بيضل الربط بس الرسائل بتتأخر.</span></div>
-        <div class="row" style="justify-content:center"><a class="btn btn-primary" href="#/numbers">${ic('book')} حفظ الأرقام</a><a class="btn" href="#/bot">${ic('bot')} المجيب</a><a class="btn" href="#/whatsapp/settings">${ic('sliders')} إعدادات الواتساب</a></div>
+        <div class="row" style="justify-content:center"><a class="btn btn-primary" href="#/numbers/new">${ic('book')} حفظ الأرقام</a><a class="btn" href="#/bot">${ic('bot')} المجيب</a><a class="btn" href="#/whatsapp/settings">${ic('sliders')} إعدادات الواتساب</a></div>
         <button class="btn btn-danger btn-sm" data-logout-wa>فك الربط</button></div>`;
     } else if (st === 'qr' && wa.qr) {
       const src = qrImg(wa.qr);

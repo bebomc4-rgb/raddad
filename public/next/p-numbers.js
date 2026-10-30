@@ -4,8 +4,10 @@ import { loadMe, refreshMe, go } from './app.js';
 import { checkout } from './p-billing.js';
 import { servicePill } from './p-main.js';
 
-export async function numbers(view) {
-  view.title('حفظ الأرقام', 'كل زبون بيراسلك بينحفظ بجهات اتصالك لحالو');
+export const numbersNew = view => numbers(view, 'new');
+export const numbersOld = view => numbers(view, 'old');
+async function numbers(view, mode) {
+  view.title(mode === 'new' ? 'حفظ كل رقم جديد' : 'الأرقام القديمة', mode === 'new' ? 'كل زبون بيراسلك أول مرة بينحفظ بجهات اتصالك لحالو' : 'كل الأرقام من سنين، من نسختك الاحتياطية، بدفعة وحدة');
   let prefixDraft = null;
   const paint = async () => {
     const d = await api('/api/csync/status'); if (!view.alive) return;
@@ -26,8 +28,7 @@ export async function numbers(view) {
         ${linked && !st.book_ready && (sNew.owned || sOld.owned) ? html`<div class="note info" style="margin-top:16px">${ic('info')}<span>عم نجيب جهات اتصالك من واتساب أول (مرة وحدة)، مشان ما نكرر أي رقم محفوظ عندك. بياخد دقايق.</span></div>` : ''}
       </div>
 
-      <div class="grid g2">
-        <div class="card pad-lg stack">
+      ${mode === 'new' ? html`        <div class="card pad-lg stack">
           <div class="row between"><span class="row nowrap"><span class="ico lg violet">${ic('book')}</span><span><h3>كل رقم جديد</h3><span class="small muted">بينحفظ أول ما يبعتلك</span></span></span>${servicePill(sNew)}</div>
           ${sNew.owned ? html`
             <div class="row between"><span><b>${sNew.paused ? 'موقوف هلق' : 'شغّال'}</b><br><span class="small muted">${sNew.forever ? 'بدون انتهاء' : `لـ ${date(sNew.expires_at)} — ${left(sNew.expires_at)}`}</span></span>
@@ -37,7 +38,7 @@ export async function numbers(view) {
             <button class="btn btn-primary" data-buy-new>${ic('zap')} اشترك</button>`}
         </div>
 
-        <div class="card pad-lg stack ${sOld.owned ? '' : 'premium'}">
+` : html`        <div class="card pad-lg stack ${sOld.owned ? '' : 'premium'}">
           <div class="row between"><span class="row nowrap"><span class="ico lg gold">${ic('history')}</span><span><h3>كل الأرقام القديمة</h3><span class="small muted">دفعة وحدة، من سنين لهلق</span></span></span>${sOld.owned ? html`<span class="pill ok">مدفوعة</span>` : html`<span class="pill gold plain">${ic('crown')} دفعة وحدة</span>`}</div>
           ${st.history ? html`<div class="row between"><span class="small muted">أرقام من نسختك الاحتياطية</span><b class="num">${n(st.history)}</b></div>` : ''}
           ${winOpen ? html`<div class="note warn">${ic('clock')}<span class="grow">باقيلك <b>${left(sOld.window_ends_at)}</b> لترفع نسختك الاحتياطية. بعدها بتسكّر.</span></div>`
@@ -48,9 +49,9 @@ export async function numbers(view) {
           </div>
           ${sOld.owned ? '' : html`<button class="btn btn-gold" data-buy-old>${ic('crown')} اشترك بدفعة وحدة</button>`}
         </div>
-      </div>
+`}
 
-      <div class="grid g2">
+      ${mode === 'new' ? html`<div class="grid g2">
         <div class="card pad-lg stack">
           <h3>${ic('edit')} اسم الرقم المحفوظ</h3>
           <div class="field"><label for="pf">الكلمة قبل الرقم</label>
@@ -62,9 +63,9 @@ export async function numbers(view) {
           <h3>${ic('info')} كيف بيشتغل</h3>
           <ul class="ticks"><li>بنحفظ بالدور، رقم كل ثانيتين ونص، مشان ما ينزعج واتساب</li><li>الرقم المحفوظ عندك من قبل ما منكرّرو</li><li>لازم يضل موبايلك متصل بالنت مشان تنزل الأسماء عليه</li><li>إذا ما بيّن الاسم بواتساب: «دردشة جديدة» ← ⋮ ← «تحديث»</li></ul>
         </div>
-      </div>
+      </div>` : ''}
 
-      ${d.imports.length ? html`<div class="card pad-lg"><h3 style="margin-bottom:8px">${ic('history')} آخر العمليات</h3><div class="list">${d.imports.map(i => html`<div class="item"><span class="ico ${i.source === 'backup' ? 'gold' : ''}">${ic(i.source === 'backup' ? 'key' : 'link')}</span>
+      ${mode === 'old' && d.imports.length ? html`<div class="card pad-lg"><h3 style="margin-bottom:8px">${ic('history')} آخر العمليات</h3><div class="list">${d.imports.map(i => html`<div class="item"><span class="ico ${i.source === 'backup' ? 'gold' : ''}">${ic(i.source === 'backup' ? 'key' : 'link')}</span>
         <span class="grow"><span class="t">${i.source === 'backup' ? 'من النسخة الاحتياطية' : 'من ربط الواتس'}</span><br><span class="s">${n(i.found)} رقم · ${ago(i.created_at)}</span></span></div>`)}</div></div>` : ''}
     </div>`);
   };
@@ -88,7 +89,7 @@ export async function numbers(view) {
 const PATH = ['الذاكرة الداخلية', 'Android', 'media', 'com.whatsapp', 'WhatsApp', 'Databases', 'msgstore.db.crypt15'];
 const fmtKey = v => v.replace(/[^0-9a-fA-F]/g, '').slice(0, 64).replace(/(.{4})(?=.)/g, '$1 ');
 export async function backup(view) {
-  view.title('الأرقام القديمة من النسخة الاحتياطية', 'كل الأرقام من أول ما فتحت واتساب', '/numbers');
+  view.title('الأرقام القديمة من النسخة الاحتياطية', 'كل الأرقام من أول ما فتحت واتساب', '/numbers/old');
   const me = await loadMe();
   const owned = me.services.contacts_old.owned;
   let step = 1, file = null, key = '', result = null, sent = null, ctrl = null, prog = { stage: 1, fraction: 0 }, err = null;

@@ -9,7 +9,9 @@ const ROUTES = [
   ['/whatsapp', () => import('./p-main.js').then(m => m.whatsapp)],
   ['/whatsapp/settings', () => import('./p-main.js').then(m => m.waSettings)],
   ['/chats', () => import('./p-wa.js').then(m => m.chats)],
-  ['/numbers', () => import('./p-numbers.js').then(m => m.numbers)],
+  ['/numbers', () => Promise.resolve(() => go('/numbers/new', true))],
+  ['/numbers/new', () => import('./p-numbers.js').then(m => m.numbersNew)],
+  ['/numbers/old', () => import('./p-numbers.js').then(m => m.numbersOld)],
   ['/numbers/backup', () => import('./p-numbers.js').then(m => m.backup)],
   ['/bot', () => import('./p-bot.js').then(m => m.overview)],
   ['/bot/inbox', () => import('./p-bot.js').then(m => m.inbox)],
@@ -50,11 +52,18 @@ function navItems(me) {
       { href: '/home', label: 'الرئيسية', icon: 'home' },
       { href: '/whatsapp', label: 'ربط واتساب', icon: 'wa', dot: me.wa?.status !== 'open' } ] },
     { group: 'الخدمات', links: [
-      { href: '/chats', label: 'واتساب', icon: 'wa' },
-      { href: '/numbers', label: 'حفظ الأرقام', icon: 'book' },
-      { href: '/bot', label: 'المجيب الذكي', icon: 'bot', badge: (c.unread || 0) + (c.needs_human || 0) || 0,
-        subs: [ { href: '/bot/inbox', label: 'المحادثات', badge: c.unread || 0 }, { href: '/bot/orders', label: 'الطلبات', badge: c.new_orders || 0 },
-          { href: '/bot/products', label: 'المنتجات' }, { href: '/bot/settings', label: 'شخصية المجيب' }, { href: '/bot/learn', label: 'علّم المجيب' }, { href: '/bot/try', label: 'جرّبو' } ] } ] },
+      { href: '/chats', label: 'واتساب', icon: 'wa' } ] },
+    { group: 'حفظ الأرقام', links: [
+      { href: '/numbers/new', label: 'حفظ كل رقم جديد', icon: 'book' },
+      { href: '/numbers/old', label: 'الأرقام القديمة', icon: 'history' } ] },
+    { group: 'المجيب الذكي', links: [
+      { href: '/bot', label: 'تشغيل المجيب', icon: 'bot' },
+      { href: '/bot/inbox', label: 'المحادثات', icon: 'chat', badge: (c.unread || 0) + (c.needs_human || 0) || 0 },
+      { href: '/bot/orders', label: 'الطلبات', icon: 'bag', badge: c.new_orders || 0 },
+      { href: '/bot/products', label: 'المنتجات', icon: 'box' },
+      { href: '/bot/settings', label: 'شخصية المجيب', icon: 'sliders' },
+      { href: '/bot/learn', label: 'علّم المجيب', icon: 'sparkle' },
+      { href: '/bot/try', label: 'جرّبو', icon: 'play' } ] },
     { group: 'حسابي', links: [
       { href: '/billing', label: 'الاشتراكات والدفع', icon: 'card', badge: c.pending_payments ? '•' : 0 },
       { href: '/account', label: 'الملف الشخصي', icon: 'user' } ] }
@@ -69,10 +78,13 @@ function navItems(me) {
     { href: '/admin/tools', label: 'أدواتي الخاصة', icon: 'tool' } ] });
   return items;
 }
-const active = (href, path) => href === path || (href !== '/home' && href !== '/admin' && path.startsWith(href + '/')) || (href === '/admin' && path === '/admin');
+let HREFS = [];
+const best = path => HREFS.filter(h => h === path || (h !== '/home' && path.startsWith(h + '/'))).sort((a, b) => b.length - a.length)[0];
+const active = (href, path) => best(path) === href;
 const badge = b => (b ? `<span class="badge">${b === '•' ? '' : esc(b > 99 ? '99+' : b)}</span>` : '');
 
 function renderSide(me, path) {
+  HREFS = navItems(me).flatMap(g => g.links.map(l => l.href));
   const groups = navItems(me).map(g => `${g.group ? `<div class="nav-group">${esc(g.group)}</div>` : ''}${g.links.map(l => {
     const on = active(l.href, path);
     const subs = l.subs && path.startsWith(l.href) ? l.subs.map(s => `<a class="sub ${s.href === path || path.startsWith(s.href + '/') ? 'on' : ''}" href="#${s.href}">${esc(s.label)}${badge(s.badge)}</a>`).join('') : '';
@@ -91,12 +103,12 @@ function renderTabs(me, path) {
   const c = me.counts || {};
   const tabs = [
     { href: '/home', label: 'الرئيسية', icon: 'home' },
-    { href: '/numbers', label: 'الأرقام', icon: 'book' },
+    { href: '/numbers/new', label: 'الأرقام', icon: 'book', base: '/numbers' },
     { href: '/bot', label: 'المجيب', icon: 'bot', badge: (c.unread || 0) + (c.needs_human || 0) },
     me.user.is_super ? { href: '/admin', label: 'الإدارة', icon: 'shield', badge: state.adminBadge || 0 } : { href: '/billing', label: 'اشتراكاتي', icon: 'card' },
     { href: '#more', label: 'المزيد', icon: 'grid' }
   ];
-  return `<nav class="tabbar">${tabs.map(t => `<a href="${t.href === '#more' ? '#' : '#' + t.href}" ${t.href === '#more' ? 'data-more' : ''} class="${t.href !== '#more' && (active(t.href, path) || (t.href === '/admin' && path.startsWith('/admin'))) ? 'on' : ''}">${icon(t.icon)}<span>${esc(t.label)}</span>${t.badge ? `<span class="badge">${t.badge > 99 ? '99+' : t.badge}</span>` : ''}</a>`).join('')}</nav>`;
+  return `<nav class="tabbar">${tabs.map(t => `<a href="${t.href === '#more' ? '#' : '#' + t.href}" ${t.href === '#more' ? 'data-more' : ''} class="${t.href !== '#more' && (path === t.href || path.startsWith((t.base || t.href) + '/') || (t.href !== '/home' && path === t.base)) ? 'on' : ''}">${icon(t.icon)}<span>${esc(t.label)}</span>${t.badge ? `<span class="badge">${t.badge > 99 ? '99+' : t.badge}</span>` : ''}</a>`).join('')}</nav>`;
 }
 function openMore() {
   const me = state.me; if (!me) return;
