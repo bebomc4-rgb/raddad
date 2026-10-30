@@ -199,6 +199,40 @@ r.put('/api/v2/wa-profile', async ctx => {
   try { return await qrConn.waUpdate(ctx.tenant.id, ctx.body); } catch (e) { throw new HttpError(400, e.message || 'واتساب رفض التعديل'); }
 });
 
+// ===== واتساب (متل واتساب ويب) =====
+const okJid = j => /^[\w.:-]+@(s\.whatsapp\.net|g\.us|lid)$/.test(String(j || ''));
+async function mirrorMod() { return import('./whatsapp/mirror.js'); }
+r.get('/api/v2/wa/chats', async ctx => {
+  owner(ctx);
+  const M = await mirrorMod(), tid = ctx.tenant.id;
+  if (!M.flag(tid, 'backfill')) {
+    const rows = q.all(`SELECT m.id, m.direction, m.body, m.media_url, m.wa_id, m.created_at, c.jid, c.name FROM messages m JOIN contacts c ON c.id = m.contact_id WHERE m.tenant_id = ? ORDER BY m.id`, tid);
+    M.backfill(tid, rows);
+  }
+  const x = ctx.query;
+  return { chats: M.listChats(tid, { q: x.q || '', offset: x.offset, limit: x.limit, archived: x.archived === '1' }), counts: M.counts(tid), wa: wa.status(ctx.tenant) };
+});
+r.get('/api/v2/wa/messages', async ctx => {
+  owner(ctx);
+  const jid = String(ctx.query.jid || ''); need(okJid(jid), 400, 'محادثة غلط');
+  const M = await mirrorMod();
+  return { chat: M.chatInfo(ctx.tenant.id, jid), messages: M.messages(ctx.tenant.id, jid, { before: ctx.query.before, limit: ctx.query.limit }) };
+});
+r.post('/api/v2/wa/read', async ctx => {
+  owner(ctx); const jid = String(ctx.body.jid || ''); need(okJid(jid), 400, 'محادثة غلط');
+  await qrConn.mirrorRead(ctx.tenant.id, jid); return { ok: true };
+});
+r.post('/api/v2/wa/media', async ctx => {
+  owner(ctx); const jid = String(ctx.body.jid || ''); need(okJid(jid), 400, 'محادثة غلط');
+  try { return { url: await qrConn.mirrorMedia(ctx.tenant.id, jid, String(ctx.body.id || '')) }; } catch (e) { throw new HttpError(400, e.message); }
+});
+r.post('/api/v2/wa/send', async ctx => {
+  owner(ctx); const jid = String(ctx.body.jid || ''); need(okJid(jid), 400, 'محادثة غلط');
+  const text = String(ctx.body.text || '').slice(0, 4000), image = typeof ctx.body.image === 'string' && ctx.body.image.startsWith('data:image/') ? ctx.body.image : null;
+  need(text.trim() || image, 400, 'اكتب رسالة');
+  try { await qrConn.mirrorSend(ctx.tenant.id, jid, { text, image }); return { ok: true }; } catch (e) { throw new HttpError(400, e.message); }
+});
+
 // ===== المدير: «ادخل كأنّو هو» ورجعة لحسابو =====
 const BACK = 'raddad_back';
 function cookieHeader(ctx, name, value, maxAge) {

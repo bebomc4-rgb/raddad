@@ -9,6 +9,7 @@ import { getTenant } from '../tenants.js';
 import { trialStatus } from '../trial.js';
 import { isActive } from '../failover.js';
 import { hasService, contactsOn } from '../services.js';
+import * as M from './mirror.js';
 
 const sessions = new Map(); // tenantId -> state
 let B = null;               // مكتبة Baileys (بتنحمّل وقت الحاجة)
@@ -27,8 +28,10 @@ async function lib() {
     DisconnectReason: pick('DisconnectReason') || { loggedOut: 401, restartRequired: 515, connectionReplaced: 440, timedOut: 408 },
     fetchLatestBaileysVersion: pick('fetchLatestBaileysVersion'),
     Browsers: pick('Browsers'),
-    downloadMediaMessage: pick('downloadMediaMessage')
+    downloadMediaMessage: pick('downloadMediaMessage'),
+    BufferJSON: pick('BufferJSON')
   };
+  if (B.BufferJSON) M.useBufferJSON(B.BufferJSON);
   return B;
 }
 
@@ -76,7 +79,8 @@ export async function start(tenantId, { pairPhone = null } = {}) {
     printQRInTerminal: false,
     markOnlineOnConnect: false,   // حتى يضل موبايلك يوصله إشعارات
     syncFullHistory: true,        // لما تربط من جديد: الواتس بيبعت كل المحادثات القديمة (مشان نحفظ كل الأرقام)
-    browser: Browsers?.ubuntu ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '22.04.4'],
+    // ربط جديد بيتعرّف كتطبيق كمبيوتر: واتساب بيبعت كل المحادثات القديمة (متل واتساب للكمبيوتر). الربط القديم بيضل متل ما هو
+    browser: !hasAuth(tenantId) && Browsers?.macOS ? Browsers.macOS('Desktop') : Browsers?.ubuntu ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '22.04.4'],
     ...(version ? { version } : {}),
     getMessage: async () => undefined
   });
@@ -84,6 +88,12 @@ export async function start(tenantId, { pairPhone = null } = {}) {
   sock.ev.on('creds.update', saveCreds);
   sock.ev.on('contacts.upsert', (list) => noteContacts(tenantId, list));
   sock.ev.on('contacts.update', (list) => noteContacts(tenantId, (list || []).filter(c => c.name)));
+  // نسخة واتساب ويب: الأسماء والمحادثات
+  sock.ev.on('contacts.upsert', async list => { try { M.setNames(tenantId, list, await mirrorResolver(tenantId, sock, list)); } catch (e) { console.error('[mirror] names', e.message); } });
+  sock.ev.on('contacts.update', async list => { try { M.setNames(tenantId, list, await mirrorResolver(tenantId, sock, list)); } catch {} });
+  sock.ev.on('chats.upsert', async list => { try { M.setChats(tenantId, list, await mirrorResolver(tenantId, sock, list)); } catch (e) { console.error('[mirror] chats', e.message); } });
+  sock.ev.on('chats.update', async list => { try { M.setChats(tenantId, list, await mirrorResolver(tenantId, sock, list)); emit(tenantId, 'wa_msg', {}); } catch {} });
+  sock.ev.on('groups.update', list => { try { M.setGroups(tenantId, Object.fromEntries((list || []).filter(g => g.id && g.subject).map(g => [g.id, g]))); } catch {} });
   // مراقبة ردّ الواتس على حفظ جهات الاتصال: Baileys ما بيفحص الخطأ يلي بيجي جوّا <collection>، فمنفحصو نحنا
   sock.ws?.on?.('frame', (fr) => {
     try {
@@ -122,6 +132,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
       setState(tenantId, { status: 'open', qr: null, code: null, phone, error: null });
       q.run("UPDATE tenants SET wa_phone = ?, wa_provider = 'qr' WHERE id = ?", phone, tenantId);
       console.log(`[wa] tenant ${tenantId} connected as ${phone}`);
+      setTimeout(() => sock.groupFetchAllParticipating().then(g => M.setGroups(tenantId, g)).catch(() => {}), 30000); // أسماء الكروبات
       clearInterval(s.lidTimer); s.lidTimer = setInterval(() => resolveLids(tenantId).catch(() => {}), 15 * 60_000);
       // كل 10 دقايق: أي رقم بقاعدة الزباين ما انحفظ بجهات الاتصال بيرجع ينضاف للطابور
       clearInterval(s.saveTimer); s.saveTimer = setInterval(() => queueAllKnown(tenantId), 10 * 60_000);
@@ -163,6 +174,13 @@ export async function start(tenantId, { pairPhone = null } = {}) {
 
   // لما يرتبط الرقم، واتساب بيبعت آخر المحادثات: منتعلّم منها أسلوب صاحب المتجر
   sock.ev.on('messaging-history.set', async ({ messages, chats, contacts }) => {
+    // نسخة واتساب ويب: كل المحادثات القديمة يلي بعتها واتساب
+    try {
+      const resolve = await mirrorResolver(tenantId, sock, [...(messages || []), ...(chats || []), ...(contacts || [])]);
+      M.setNames(tenantId, contacts || [], resolve); M.setChats(tenantId, chats || [], resolve);
+      const n = M.add(tenantId, messages || [], { resolve });
+      if (n) { console.log(`[mirror] tenant ${tenantId}: saved ${n} old messages from ${(chats || []).length} chats`); emit(tenantId, 'wa_msg', {}); }
+    } catch (e) { console.error('[mirror] history', e.message); }
     // كل أرقام المحادثات القديمة بتنحفظ بجهات الاتصال
     try {
       noteContacts(tenantId, (contacts || []).filter(c => c.name));
@@ -215,6 +233,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    try { M.add(tenantId, messages || [], { resolve: await mirrorResolver(tenantId, sock, messages || []), live: true }); } catch (e) { console.error('[mirror] live', e.message); }
     if (type !== 'notify') {
       // رسائل وصلت لما النت كان قاطع (append): البوت ما بيرد عليها، بس أرقامها لازم تنحفظ بجهات الاتصال
       const found = [];
@@ -825,4 +844,55 @@ export async function waUpdate(tenantId, b = {}) {
     await sock.updateBussinesProfile(args);
   }
   return waProfile(tenantId);
+}
+
+// ===== نسخة واتساب ويب =====
+// @lid → رقم (إذا عرفناه)، حتى ما تنقسم محادثة الشخص لاتنين
+const lidCache = new Map();
+async function mirrorResolver(tenantId, sock, items) {
+  const pnOf = v => { const x = String(v || ''); return /@s\.whatsapp\.net$/.test(x) ? x.replace(/:\d+@/, '@') : ''; };
+  const note = (lid, pn) => { lid = String(lid || ''); pn = pnOf(pn); if (/@lid$/.test(lid) && pn) lidCache.set(tenantId + ':' + lid, pn); };
+  const lids = new Set();
+  for (const x of items || []) {
+    const k = x?.key;
+    if (k) { note(k.remoteJid, k.remoteJidAlt || k.senderPn); note(k.participant, k.participantAlt || k.participantPn); for (const v of [k.remoteJid, k.participant]) if (/@lid$/.test(v || '')) lids.add(v); }
+    if (x?.id) { note(x.id, x.pnJid || x.phoneNumber); note(x.lidJid || x.lid, x.id); if (/@lid$/.test(x.id)) lids.add(x.id); }
+  }
+  const map = sock.signalRepository?.lidMapping;
+  for (const lid of lids) {
+    if (lidCache.has(tenantId + ':' + lid) || !map?.getPNForLID) continue;
+    try { note(lid, await map.getPNForLID(lid)); } catch {}
+  }
+  return jid => { jid = String(jid || ''); return /@lid$/.test(jid) ? (lidCache.get(tenantId + ':' + jid) || jid) : jid.replace(/:\d+@/, '@'); };
+}
+// تنزيل صورة/فيديو/صوت/ملف من رسالة محفوظة (بيحفظها بمجلد uploads باسم ما بينحزر)
+export async function mirrorMedia(tenantId, jid, id) {
+  const r = M.rawMessage(tenantId, jid, id);
+  if (!r) throw new Error('ما في وسائط بهالرسالة');
+  const crypto = await import('node:crypto');
+  const extOf = mime => ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'video/mp4': 'mp4', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'application/pdf': 'pdf' })[String(mime || '').split(';')[0].trim()] || (r.type === 'voice' ? 'ogg' : r.type === 'image' ? 'jpg' : r.type === 'video' || r.type === 'gif' ? 'mp4' : r.type === 'sticker' ? 'webp' : 'bin');
+  const name = `${tenantId}-wa-${crypto.createHash('sha256').update(tenantId + '|' + jid + '|' + id + '|' + (process.env.SESSION_SECRET || 'kf')).digest('hex').slice(0, 24)}.${extOf(r.meta?.mime)}`;
+  const file = path.join(DATA_DIR, 'uploads', name);
+  if (fs.existsSync(file)) return '/uploads/' + name;
+  const s = sessions.get(tenantId);
+  if (!s?.sock || s.status !== 'open') throw new Error('واتساب مو مربوط هلّق، فما فينا ننزّل الملف');
+  const { downloadMediaMessage } = await lib();
+  const buf = await downloadMediaMessage(r.msg, 'buffer', {}, { logger: silent, reuploadRequest: s.sock.updateMediaMessage });
+  if (!buf?.length) throw new Error('ما قدرنا ننزّل الملف (يمكن انمسح من موبايل صاحبو)');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, buf);
+  return '/uploads/' + name;
+}
+export async function mirrorSend(tenantId, jid, { text, image }) {
+  const s = sessions.get(tenantId);
+  if (!s?.sock || s.status !== 'open') throw new Error('واتساب مو مربوط هلّق');
+  if (image) return s.sock.sendMessage(jid, { image: Buffer.from(String(image).split(',')[1] || '', 'base64'), caption: text || undefined });
+  return s.sock.sendMessage(jid, { text });
+}
+export async function mirrorRead(tenantId, jid) {
+  M.markRead(tenantId, jid);
+  const s = sessions.get(tenantId);
+  if (!s?.sock || s.status !== 'open') return;
+  const last = M.messages(tenantId, jid, { limit: 1 }).filter(m => !m.from_me);
+  if (last.length) s.sock.readMessages([{ remoteJid: jid, id: last[0].id, fromMe: false, ...(jid.endsWith('@g.us') && last[0].sender ? { participant: last[0].sender } : {}) }]).catch(() => {});
 }

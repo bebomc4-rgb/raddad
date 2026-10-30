@@ -8,6 +8,7 @@ const ROUTES = [
   ['/home', () => import('./p-main.js').then(m => m.home)],
   ['/whatsapp', () => import('./p-main.js').then(m => m.whatsapp)],
   ['/whatsapp/settings', () => import('./p-main.js').then(m => m.waSettings)],
+  ['/chats', () => import('./p-wa.js').then(m => m.chats)],
   ['/numbers', () => import('./p-numbers.js').then(m => m.numbers)],
   ['/numbers/backup', () => import('./p-numbers.js').then(m => m.backup)],
   ['/bot', () => import('./p-bot.js').then(m => m.overview)],
@@ -49,6 +50,7 @@ function navItems(me) {
       { href: '/home', label: 'الرئيسية', icon: 'home' },
       { href: '/whatsapp', label: 'ربط واتساب', icon: 'wa', dot: me.wa?.status !== 'open' } ] },
     { group: 'الخدمات', links: [
+      { href: '/chats', label: 'واتساب', icon: 'wa' },
       { href: '/numbers', label: 'حفظ الأرقام', icon: 'book' },
       { href: '/bot', label: 'المجيب الذكي', icon: 'bot', badge: (c.unread || 0) + (c.needs_human || 0) || 0,
         subs: [ { href: '/bot/inbox', label: 'المحادثات', badge: c.unread || 0 }, { href: '/bot/orders', label: 'الطلبات', badge: c.new_orders || 0 },

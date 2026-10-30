@@ -37,7 +37,7 @@ export function connectLive() {
   if (ES) return;
   try {
     ES = new EventSource('/api/events');
-    for (const t of ['wa', 'message', 'contact', 'order', 'notice', 'handoff', 'agent_error']) ES.addEventListener(t, e => { let d = {}; try { d = JSON.parse(e.data); } catch {} emit(t, d); });
+    for (const t of ['wa', 'wa_msg', 'message', 'contact', 'order', 'notice', 'handoff', 'agent_error']) ES.addEventListener(t, e => { let d = {}; try { d = JSON.parse(e.data); } catch {} emit(t, d); });
   } catch {}
 }
 export function disconnectLive() { try { ES?.close(); } catch {} ES = null; }

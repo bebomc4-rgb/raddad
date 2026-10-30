@@ -439,3 +439,57 @@ kbd { font-family: inherit; font-size: 12.5px; padding: 1px 8px; border-radius: 
 /* شريط «داخل على حساب مشترك» */
 .imp-bar { display: flex; align-items: center; gap: 10px; margin: 0 clamp(16px, 3vw, 34px) 6px; padding: 10px 14px; border-radius: 14px;
   background: color-mix(in srgb, var(--gold) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); font-size: 14px; }
+
+/* ===== واتساب جوّا الموقع (متل واتساب ويب) ===== */
+.content.flush { padding: 0 !important; max-width: none !important; }
+.wa { --wa-bg: #0B141A; --wa-panel: #111B21; --wa-in: #202C33; --wa-out: #005C4B; --wa-txt: #E9EDEF; --wa-sub: #8696A0; --wa-line: rgba(255,255,255,.08); --wa-acc: #00A884;
+  display: grid; grid-template-columns: 380px 1fr; height: calc(100dvh - 66px); background: var(--wa-panel); color: var(--wa-txt); border-top: 1px solid var(--wa-line); }
+[data-theme="light"] .wa { --wa-bg: #EFEAE2; --wa-panel: #FFFFFF; --wa-in: #FFFFFF; --wa-out: #D9FDD3; --wa-txt: #111B21; --wa-sub: #667781; --wa-line: #E9EDEF; }
+.wa-list { display: flex; flex-direction: column; min-height: 0; border-inline-end: 1px solid var(--wa-line); }
+.wa-search { padding: 10px 12px 6px; } .wa-search .input { min-height: 40px; border-radius: 10px; }
+.wa-tabs { display: flex; gap: 6px; padding: 4px 12px 8px; }
+.wa-tabs button { border: 0; border-radius: 999px; padding: 5px 13px; font-size: 13px; font-weight: 600; background: var(--surface-2); color: var(--wa-sub); cursor: pointer; }
+.wa-tabs button.on { background: color-mix(in srgb, var(--wa-acc) 22%, transparent); color: var(--wa-acc); }
+.wa-items { flex: 1; overflow-y: auto; }
+.wa-item { width: 100%; display: flex; gap: 12px; align-items: center; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--wa-line); background: none; color: inherit; text-align: start; cursor: pointer; }
+.wa-item:hover { background: color-mix(in srgb, var(--wa-txt) 5%, transparent); } .wa-item.on { background: color-mix(in srgb, var(--wa-txt) 9%, transparent); }
+.wa-av { width: 46px; height: 46px; font-size: 17px; background: color-mix(in srgb, var(--wa-sub) 30%, transparent); color: var(--wa-txt); }
+.wa-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wa-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.wa-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 15px; }
+.wa-row small { color: var(--wa-sub); font-size: 12px; white-space: nowrap; } .wa-row small.hot { color: var(--wa-acc); font-weight: 700; }
+.wa-last { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-sub); font-size: 13.5px; }
+.wa-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--wa-acc); color: #fff; font-size: 11.5px; font-weight: 700; display: grid; place-items: center; }
+.wa-pin { font-size: 12px; } .wa-none { padding: 30px 18px; text-align: center; color: var(--wa-sub); font-size: 14px; }
+.wa-chat { display: flex; flex-direction: column; min-height: 0; background: var(--wa-bg); }
+.wa-empty { margin: auto; text-align: center; color: var(--wa-sub); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px; }
+.wa-empty svg { width: 64px; height: 64px; opacity: .5; }
+.wa-head { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--wa-panel); border-bottom: 1px solid var(--wa-line); }
+.wa-head .wa-av { width: 40px; height: 40px; } .wa-back { display: none; }
+.wa-msgs { flex: 1; overflow-y: auto; padding: 14px 7%; display: flex; flex-direction: column; gap: 3px;
+  background-image: radial-gradient(color-mix(in srgb, var(--wa-txt) 5%, transparent) 1px, transparent 1.4px); background-size: 18px 18px; }
+.wa-day { align-self: center; margin: 10px 0 6px; padding: 5px 12px; border-radius: 8px; font-size: 12.5px; background: var(--wa-panel); color: var(--wa-sub); box-shadow: 0 1px 1px rgba(0,0,0,.15); }
+.wa-older { align-self: center; margin-bottom: 6px; }
+.wa-b { position: relative; max-width: min(75%, 560px); align-self: flex-start; background: var(--wa-in); padding: 6px 9px 4px; border-radius: 9px; border-start-start-radius: 2px;
+  font-size: 14.2px; line-height: 1.5; box-shadow: 0 1px .5px rgba(0,0,0,.13); overflow-wrap: anywhere; margin-top: 2px; }
+.wa-b.me { align-self: flex-end; background: var(--wa-out); border-start-start-radius: 9px; border-start-end-radius: 2px; }
+.wa-b.del { color: var(--wa-sub); }
+.wa-who { font-size: 12.5px; font-weight: 700; color: var(--wa-acc); margin-bottom: 2px; }
+.wa-txt a { color: #53BDEB; text-decoration: underline; }
+.wa-t { display: block; text-align: end; font-size: 11px; color: var(--wa-sub); margin-top: 1px; direction: ltr; }
+.wa-img { display: block; position: relative; border: 0; padding: 0; background: none; cursor: pointer; border-radius: 7px; overflow: hidden; max-width: 300px; margin-bottom: 3px; }
+.wa-img img { width: 100%; min-width: 180px; max-height: 340px; object-fit: cover; display: block; }
+.wa-img:not(.full) img { filter: blur(1.5px); } .wa-img.sticker img { min-width: 0; width: 140px; }
+.wa-ph { display: grid; place-items: center; width: 220px; height: 150px; background: color-mix(in srgb, var(--wa-txt) 8%, transparent); color: var(--wa-sub); font-size: 13px; text-align: center; }
+.wa-play { position: absolute; inset: 0; margin: auto; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: rgba(0,0,0,.55); color: #fff; font-size: 20px; }
+.wa-video { max-width: 320px; max-height: 360px; border-radius: 7px; display: block; margin-bottom: 3px; }
+.wa-aud { max-width: 280px; display: block; margin-bottom: 3px; }
+.wa-audio, .wa-doc { background: color-mix(in srgb, var(--wa-txt) 8%, transparent); border-color: transparent; color: inherit; margin-bottom: 3px; }
+.wa-loc { color: #53BDEB; }
+.wa-compose { display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px; background: var(--wa-panel); border-top: 1px solid var(--wa-line); }
+.wa-compose textarea { flex: 1; min-height: 42px; max-height: 140px; resize: none; border-radius: 10px; padding: 10px 12px; }
+@media (max-width: 900px) {
+  .wa { grid-template-columns: 1fr; height: calc(100dvh - 96px - var(--tabbar) - env(safe-area-inset-bottom)); }
+  .wa .wa-chat { display: none; } .wa.show-chat .wa-list { display: none; } .wa.show-chat .wa-chat { display: flex; }
+  .wa-back { display: inline-flex; } .wa-msgs { padding: 12px 10px; } .wa-b { max-width: 86%; }
+}
