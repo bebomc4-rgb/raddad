@@ -82,7 +82,7 @@ export async function landing(view) {
       <div style="max-width:760px;margin:auto">
         <details class="faq" open><summary>كيف بيتربط واتسابي؟</summary><p>متل واتساب ويب بالزبط: بتفتح واتساب ← الأجهزة المرتبطة ← ربط جهاز، وبتمسح الكود يلي بيطلعلك. وإذا ما عندك غير الموبايل، بتطلب كود من 8 أحرف وبتكتبو بواتساب.</p></details>
         <details class="faq"><summary>إذا اشتركت بحفظ الأرقام بس، المجيب رح يرد على زباينِي؟</summary><p>لا. كل خدمة لحالها. المجيب ما بيرد على حدا إلا إذا شغّلتو إنت بإيدك.</p></details>
-        <details class="faq"><summary>كيف بتجيبو أرقامي القديمة؟ وبياناتي بأمان؟</summary><p>من نسختك الاحتياطية: بتختار ملف النسخة وبتكتب مفتاحها، والملف بينقرا على جهازك إنت، وما بيوصلنا منو غير الأرقام. بعد الشرا معك 24 ساعة لترفعها.</p></details>
+        <details class="faq"><summary>كيف بتجيبو أرقامي القديمة؟ وبياناتي بأمان؟</summary><p>من نسختك الاحتياطية: بتختار ملف النسخة وبتكتب مفتاحها، والملف بينقرا على جهازك إنت، وما بيوصلنا منو غير الأرقام. بعد الشراء معك 24 ساعة لترفعها.</p></details>
         <details class="faq"><summary>شو الاسم يلي بينحفظ فيه الرقم؟</summary><p>«زبون» وآخر 4 أرقام، مثلاً «زبون 4821»، وفيك تغيّر كلمة «زبون». والأسماء يلي إنت حاططها من قبل ما منلمسها أبداً.</p></details>
         <details class="faq"><summary>كيف بدفع؟</summary><p>شام كاش (بتحوّل وبتبعت صورة التحويل على واتساب 0938986875)، أو كاش بمركزنا: دمشق - قدسيا - خلف البلدية. منأكّد الدفعة ومنفعّلك بأسرع وقت.</p></details>
         <details class="faq"><summary>في شي لازم أعرفو قبل؟</summary><p>الربط غير رسمي، متل كل البرامج يلي بتربط واتساب ويب. واتساب ممكن يقيّد الأرقام يلي بتبعت رسائل مزعجة، لهيك المجيب بيرد على يلي بيراسلك بس، وما بيبعت رسائل جماعية.</p></details>
@@ -95,12 +95,13 @@ export async function landing(view) {
   const body = view.el.querySelector('[data-pbody]');
   const draw = () => {
     if (tab === 'responder') {
-      body.innerHTML = toHTML(html`<div class="row" style="justify-content:center;margin-bottom:18px"><div class="seg" data-months>${[1, 3, 6, 12].map(m => html`<button data-m="${m}" class="${m === months ? 'on' : ''}">${periodName(m)}</button>`)}</div></div>
-        <div class="grid ${paidPlans.length >= 3 ? 'g3' : 'g2'}">${paidPlans.map((p, i) => html`<div class="card pad-lg product ${i === 1 ? 'glow' : ''}">
-          <div class="row between"><h3>${p.name}</h3>${i === 1 ? html`<span class="pill gold plain">الأكتر طلباً</span>` : ''}</div>
-          <div><span class="price">${money(p.prices?.[months], p.currency)}</span> <small class="muted">/ ${periodName(months)}</small></div>
-          <ul>${(p.features?.length ? p.features : ['ردود بلا حدود', `حتى ${n(p.max_products)} منتج`]).slice(0, 6).map(f => html`<li>${f}</li>`)}</ul>
-          <button class="btn btn-primary btn-block" data-buy="plan:${p.id}:${months}" style="margin-top:auto">اشترك</button></div>`)}</div>`);
+      const p = paidPlans[0] || { prices: {}, currency: 'USD' };
+      const entries = Object.entries(p.prices || {}).filter(([m, v]) => Number(m) > 0 && v != null);
+      body.innerHTML = toHTML(html`<div class="grid ${entries.length >= 4 ? 'g4' : 'g3'}">${entries.map(([m, v]) => html`<div class="card pad-lg product ${m === '12' ? 'glow' : ''}">
+        <h3>${periodName(Number(m))}</h3><div><span class="price">${money(v, p.currency)}</span></div>
+        ${Number(m) > 1 ? html`<span class="tiny muted">يعني ${money(Math.round(v / Number(m) * 100) / 100, p.currency)} بالشهر</span>` : ''}
+        <ul>${products[0].feats.slice(0, 4).map(f => html`<li>${f}</li>`)}</ul>
+        <button class="btn btn-primary btn-block" data-buy="plan:${p.id}:${m}" style="margin-top:auto">اشترك</button></div>`)}</div>`);
     } else {
       const s = tab === 'contacts_new' ? sNew : sOld;
       const entries = Object.entries(s.prices || {}).filter(([, v]) => v != null);

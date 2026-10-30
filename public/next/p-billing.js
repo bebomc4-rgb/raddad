@@ -78,6 +78,7 @@ export async function checkout({ kind, id, months, onDone }) {
   });
 }
 
+const RESP_FEATS = ['بيحكي بأسلوبك وبيفهم اللهجة', 'ردود بلا حدود', 'بيفهم الرسائل الصوتية وبيرد عليها', 'بيشوف الصور وبيرد بطريقة تسويقية', 'بياخد الاسم والرقم والعنوان ويبعتلك الطلب', 'بيسكت لحالو لما ترد إنت من موبايلك'];
 export async function billing(view) {
   view.title('الاشتراكات والدفع', 'كل خدمة لحالها، وبتدفع بس على يلي بدك ياه');
   let tab = ['responder', 'contacts_new', 'contacts_old'].includes(view.query.tab) ? view.query.tab : 'responder', months = 1;
@@ -93,12 +94,14 @@ export async function billing(view) {
     ];
     let body;
     if (tab === 'responder') {
-      body = html`<div class="row" style="margin-bottom:14px"><div class="seg" data-months>${[1, 3, 6, 12].map(m => html`<button data-m="${m}" class="${m === months ? 'on' : ''}">${periodName(m)}</button>`)}</div></div>
-        <div class="grid ${paid.length >= 3 ? 'g3' : 'g2'}">${paid.map((p, i) => html`<div class="card product ${i === 1 ? 'glow' : ''}">
-          <div class="row between"><h3>${p.name}</h3>${r.paid && r.plan_id === p.id ? html`<span class="pill ok">باقتك</span>` : ''}</div>
-          <div><span class="price">${money(p.prices[months], p.currency)}</span> <small class="muted">/ ${periodName(months)}</small></div>
-          <ul>${(p.features?.length ? p.features : ['ردود بلا حدود', `حتى ${p.max_products.toLocaleString('en-US')} منتج`]).slice(0, 5).map(f => html`<li>${f}</li>`)}</ul>
-          <button class="btn btn-primary btn-block" style="margin-top:auto" data-buy="plan" data-id="${p.id}" ${p.prices[months] == null ? 'disabled' : ''}>${r.paid && r.plan_id === p.id ? 'جدّد' : 'اشترك'}</button></div>`)}</div>`;
+      const p = paid[0] || { prices: {}, currency: 'USD' };
+      const entries = Object.entries(p.prices || {}).filter(([m, v]) => Number(m) > 0 && v != null);
+      body = html`<div class="card" style="margin-bottom:14px"><div class="row"><span class="ico lg blue">${ic('bot')}</span><span class="grow"><b>المجيب الذكي</b><br><span class="small muted">بيرد على كل زبون بثواني باللهجة السورية، بيعرف منتجاتك وأسعارك، وبياخد الطلب كامل.</span></span></div>
+          <ul class="ticks" style="margin-top:14px">${RESP_FEATS.map(f => html`<li>${f}</li>`)}</ul></div>
+        <div class="grid ${entries.length >= 4 ? 'g4' : entries.length > 1 ? 'g3' : ''}">${entries.map(([m, v]) => html`<div class="card product">
+          <h3>${periodName(Number(m))}</h3><div><span class="price">${money(v, p.currency)}</span></div>
+          ${Number(m) > 1 ? html`<span class="tiny muted">يعني ${money(Math.round(v / Number(m) * 100) / 100, p.currency)} بالشهر</span>` : ''}
+          <button class="btn btn-primary btn-block" style="margin-top:auto" data-buy="plan" data-id="${p.id}" data-months="${m}">${r.paid ? 'جدّد' : 'اشترك'}</button></div>`)}</div>`;
     } else {
       const s = svc(tab), entries = Object.entries(s.prices || {}).filter(([, v]) => v != null);
       const owned = sv[tab]?.owned;
@@ -131,6 +134,6 @@ export async function billing(view) {
   view.on('click', '[data-tabs] button', (e, b) => { tab = b.dataset.t; paint(); });
   view.on('click', '[data-tab-go]', (e, b) => { tab = b.dataset.tabGo; paint().then(() => view.el.querySelector('[data-shop]')?.scrollIntoView({ behavior: 'smooth' })); });
   view.on('click', '[data-months] button', (e, b) => { months = Number(b.dataset.m); paint(); });
-  view.on('click', '[data-buy]', (e, b) => checkout({ kind: b.dataset.buy, id: b.dataset.id, months: b.dataset.buy === 'plan' ? months : Number(b.dataset.months), onDone: paint }));
+  view.on('click', '[data-buy]', (e, b) => checkout({ kind: b.dataset.buy, id: b.dataset.id, months: b.dataset.months != null ? Number(b.dataset.months) : months, onDone: paint }));
   if (view.query.buy) { const [kind, id, m] = view.query.buy.split(':'); checkout({ kind, id, months: Number(m || (kind === 'plan' ? 1 : 0)), onDone: paint }); }
 }

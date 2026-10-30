@@ -44,7 +44,7 @@ async function numbers(view, mode) {
           ${winOpen ? html`<div class="note warn">${ic('clock')}<span class="grow">باقيلك <b>${left(sOld.window_ends_at)}</b> لترفع نسختك الاحتياطية. بعدها بتسكّر.</span></div>`
             : winOver ? html`<div class="note">${ic('lock')}<span class="grow">خلصت مهلة الـ 24 ساعة لرفع النسخة الاحتياطية.</span></div>` : ''}
           <div class="list">
-            <div class="item"><span class="ico gold">${ic('key')}</span><span class="grow"><span class="t">من النسخة الاحتياطية</span><br><span class="s">كل الأرقام من أول ما فتحت واتساب. بعد الشرا معك 24 ساعة لترفعها.</span></span>
+            <div class="item"><span class="ico gold">${ic('key')}</span><span class="grow"><span class="t">من النسخة الاحتياطية</span><br><span class="s">كل الأرقام من أول ما فتحت واتساب. بعد الشراء معك 24 ساعة لترفعها.</span></span>
               ${winOver ? '' : html`<a class="btn btn-sm ${sOld.owned ? 'btn-gold' : ''}" href="#/numbers/backup">${sOld.owned ? 'ابدأ' : 'شوف كم رقم عندك'}</a>`}</div>
           </div>
           ${sOld.owned ? '' : html`<button class="btn btn-gold" data-buy-old>${ic('crown')} اشترك بدفعة وحدة</button>`}

@@ -35,7 +35,7 @@ export function hasService(tid, sid) {
 }
 export const contactsOn = tid => hasService(tid, 'contacts_new') || hasService(tid, 'contacts_old');
 // «الأرقام القديمة» دفعة وحدة: بس الأرقام يلي راسلت قبل وقت التفعيل. يلي إجا بعدو «جديد» وبدو اشتراك «كل رقم جديد»
-// مهلة رفع النسخة الاحتياطية بعد الشرا: 24 ساعة
+// مهلة رفع النسخة الاحتياطية بعد الشراء: 24 ساعة
 export const OLD_WINDOW = 24 * 3600;
 export function oldWindow(tid) {
   if (isSuperTenant(tid)) return { open: true, ends_at: null };

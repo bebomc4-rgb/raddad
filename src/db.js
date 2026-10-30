@@ -342,6 +342,10 @@ const migrations = [
   INSERT INTO plan_prices (plan_id, months, price) VALUES ('pro', 1, 30), ('pro', 3, 80), ('pro', 6, 140), ('pro', 12, 210)
   ON CONFLICT(plan_id, months) DO UPDATE SET price = excluded.price;
   UPDATE plans SET is_public = 0 WHERE id = 'business';
+    `,
+  // 20: تصليح إملاء «الشراء»
+  `
+  UPDATE services SET features = REPLACE(features, 'بعد الشرا معك', 'بعد الشراء معك') WHERE id = 'contacts_old';
   `
 ];
 
