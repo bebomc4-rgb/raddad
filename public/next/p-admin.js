@@ -99,6 +99,9 @@ function manage(t, plans, done) {
         <span class="row"><select class="select" style="width:auto;min-height:38px" data-plan>${plans.filter(p => p.id !== 'free').map(p => html`<option value="${p.id}" ${p.id === t.plan_id ? 'selected' : ''}>${p.name}</option>`)}</select>
           <select class="select" style="width:auto;min-height:38px" data-plan-months>${[['d1', 'تجربة يوم'], ['d3', 'تجربة 3 أيام'], ['d7', 'تجربة أسبوع'], ...[1, 3, 6, 12].map(m => [String(m), periodName(m)])].map(([v, l]) => html`<option value="${v}" ${v === '1' ? 'selected' : ''}>${l}</option>`)}</select><button class="btn btn-sm btn-primary" data-plan-go>فعّل/مدّد</button></span></div>
       <div class="divider"></div>
+      <div class="row between"><span><b>شوف حسابو من جوّا</b><br><span class="small muted">بتفوت كأنك هو: المحادثات، الأرقام، إعدادات الواتساب</span></span>
+        <button class="btn btn-sm btn-primary" data-enter>${ic('user')} ادخل كأنّو هو</button></div>
+      <div class="divider"></div>
       <div class="row between"><span><b>الحساب</b><br><span class="small muted">${t.status === 'suspended' ? 'موقوف: ما بيشتغل شي' : 'شغّال'}</span></span>
         <button class="btn btn-sm ${t.status === 'suspended' ? 'btn-primary' : 'btn-danger'}" data-status="${t.status === 'suspended' ? 'active' : 'suspended'}">${t.status === 'suspended' ? 'رجّعو' : 'وقّف الحساب'}</button></div>
     </div>`,
@@ -114,6 +117,8 @@ function manage(t, plans, done) {
         }
         const pg = e.target.closest('[data-plan-go]');
         if (pg) busy(pg, async () => { try { await api(`/api/admin/tenants/${t.id}`, { method: 'PUT', body: { plan_id: m.querySelector('[data-plan]').value, ...(v => v.startsWith('d') ? { add_days: Number(v.slice(1)) } : { add_months: Number(v) })(m.querySelector('[data-plan-months]').value) } }); await after('تفعّل المجيب ✓'); } catch (err) { fail(err); } });
+        const en = e.target.closest('[data-enter]');
+        if (en) busy(en, async () => { try { await api(`/api/admin/v2/tenants/${t.id}/enter`, { method: 'POST', body: {} }); location.hash = '#/home'; location.reload(); } catch (err) { fail(err); } });
         const st = e.target.closest('[data-status]');
         if (st) {
           if (st.dataset.status === 'suspended' && !await confirmBox('رح يوقف كلشي عند هالمشترك ويتفك ربط واتسابو مؤقتاً.', { ok: 'وقّف', danger: true })) return;

@@ -111,7 +111,7 @@ export async function whatsapp(view) {
         <div class="wa-big">${ic('wa')}</div><h2>واتسابك مربوط ✓</h2>
         <p class="muted">الرقم: <b class="num">${phoneFmt(wa.phone)}</b></p>
         <div class="note info" style="text-align:start">${ic('info')}<span>خلّي موبايلك متصل بالنت. إذا انطفى موبايلك فترة طويلة، بيضل الربط بس الرسائل بتتأخر.</span></div>
-        <div class="row" style="justify-content:center"><a class="btn btn-primary" href="#/numbers">${ic('book')} حفظ الأرقام</a><a class="btn" href="#/bot">${ic('bot')} المجيب</a></div>
+        <div class="row" style="justify-content:center"><a class="btn btn-primary" href="#/numbers">${ic('book')} حفظ الأرقام</a><a class="btn" href="#/bot">${ic('bot')} المجيب</a><a class="btn" href="#/whatsapp/settings">${ic('sliders')} إعدادات الواتساب</a></div>
         <button class="btn btn-danger btn-sm" data-logout-wa>فك الربط</button></div>`;
     } else if (st === 'qr' && wa.qr) {
       const src = qrImg(wa.qr);
@@ -237,3 +237,60 @@ export async function account(view) {
   view.on('click', '[data-logout]', () => logout());
 }
 export { periodName, money };
+
+// ===== إعدادات حساب الواتساب: الاسم، النبذة، الصورة، الخصوصية، البزنس =====
+const PRIV = [
+  ['last', 'آخر ظهور', [['all', 'الكل'], ['contacts', 'جهات الاتصال'], ['contact_blacklist', 'جهات الاتصال ما عدا…'], ['none', 'ولا حدا']]],
+  ['online', 'متصل الآن', [['all', 'الكل'], ['match_last_seen', 'متل آخر ظهور']]],
+  ['profile', 'صورة الملف', [['all', 'الكل'], ['contacts', 'جهات الاتصال'], ['contact_blacklist', 'جهات الاتصال ما عدا…'], ['none', 'ولا حدا']]],
+  ['status', 'الحالة (الستوري)', [['all', 'الكل'], ['contacts', 'جهات الاتصال'], ['contact_blacklist', 'جهات الاتصال ما عدا…'], ['none', 'ولا حدا']]],
+  ['readreceipts', 'إشعارات القراءة (الصحّين الزرق)', [['all', 'شغّالة'], ['none', 'مطفية']]],
+  ['groupadd', 'مين بيضيفك لمجموعات', [['all', 'الكل'], ['contacts', 'جهات الاتصال'], ['contact_blacklist', 'جهات الاتصال ما عدا…']]],
+  ['calladd', 'مين بيتصل فيك', [['all', 'الكل'], ['known', 'الأرقام المعروفة بس']]]
+];
+export async function waSettings(view) {
+  view.title('إعدادات الواتساب', 'بتتغيّر بحساب الواتساب نفسو', '/whatsapp');
+  let p;
+  try { p = await api('/api/v2/wa-profile'); }
+  catch (err) { view.html(html`<div class="card"><div class="empty"><div class="ico">${ic('wa')}</div><h3>${err.message}</h3><a class="btn btn-primary" href="#/whatsapp">اربط واتساب</a></div></div>`); return; }
+  if (!view.alive) return;
+  view.html(html`<div class="stack" style="max-width:820px">
+    <div class="card pad-lg">
+      <div class="profile-head">
+        <label class="avatar-pick" title="غيّر صورة الواتساب">${p.picture ? html`<span class="avatar xl"><img src="${p.picture}" alt="" referrerpolicy="no-referrer"></span>` : html`<span class="avatar xl">${ic('user')}</span>`}<span class="avatar-cam">${ic('camera')}</span><input type="file" accept="image/*" data-pic hidden></label>
+        <div class="grow"><h2 style="margin:0">${p.name || 'بلا اسم'}</h2><div class="muted num">${phoneFmt(p.phone)}</div>
+          ${p.picture ? html`<button class="btn btn-sm btn-ghost" style="margin-top:8px" data-pic-del>شيل الصورة</button>` : ''}</div>
+      </div>
+      <form class="stack" data-prof style="margin-top:18px">
+        <div class="grid g2"><div class="field"><label>الاسم بالواتساب</label><input class="input" name="name" value="${p.name}" maxlength="25"></div>
+          <div class="field"><label>النبذة (About)</label><input class="input" name="about" value="${p.about}" maxlength="139"></div></div>
+        <div class="row end"><button class="btn btn-primary" type="submit">احفظ</button></div>
+      </form>
+    </div>
+    ${p.business ? html`<div class="card pad-lg">
+      <div class="card-h"><h3>${ic('box')} معلومات البزنس</h3></div>
+      <form class="stack" data-biz>
+        <div class="field"><label>الوصف</label><textarea class="textarea" name="description" rows="3" maxlength="500">${p.business.description}</textarea></div>
+        <div class="grid g2"><div class="field"><label>العنوان</label><input class="input" name="address" value="${p.business.address}"></div>
+          <div class="field"><label>الإيميل</label><input class="input" name="email" type="email" dir="ltr" value="${p.business.email}"></div></div>
+        <div class="field"><label>الموقع الإلكتروني</label><input class="input" name="website" dir="ltr" value="${p.business.website}" placeholder="https://"></div>
+        <div class="row end"><button class="btn btn-primary" type="submit">احفظ</button></div>
+      </form>
+    </div>` : html`<div class="note">${ic('info')}<span>هاد الرقم مو حساب واتساب بزنس، فما في معلومات بزنس تتعدّل.</span></div>`}
+    <div class="card pad-lg">
+      <div class="card-h"><h3>${ic('lock')} الخصوصية</h3></div>
+      <div class="list">${PRIV.map(([k, label, opts]) => html`<div class="item"><span class="grow"><b>${label}</b></span>
+        <select class="select" style="width:auto;min-height:38px" data-priv="${k}">${p.privacy[k] == null ? html`<option value="">—</option>` : ''}${opts.map(([v, t]) => html`<option value="${v}" ${p.privacy[k] === v ? 'selected' : ''}>${t}</option>`)}</select></div>`)}</div>
+      <p class="tiny faint" style="margin-top:10px">كل تغيير بينحفظ فوراً بالواتساب.</p>
+    </div>
+  </div>`);
+  const save = async (body, msg) => { await api('/api/v2/wa-profile', { method: 'PUT', body }); toast(msg); };
+  view.on('submit', '[data-prof]', (e, f) => { e.preventDefault(); busy(f.querySelector('[type=submit]'), async () => { try { await save({ name: f.name.value, about: f.about.value }, 'انحفظ بالواتساب ✓'); waSettings(view); } catch (err) { fail(err); } }); });
+  view.on('submit', '[data-biz]', (e, f) => { e.preventDefault(); busy(f.querySelector('[type=submit]'), async () => { try { await save({ business: { description: f.description.value, address: f.address.value, email: f.email.value, website: f.website.value } }, 'انحفظت معلومات البزنس ✓'); } catch (err) { fail(err); } }); });
+  view.on('change', '[data-priv]', async (e, sel) => { if (!sel.value) return; try { await save({ privacy: { [sel.dataset.priv]: sel.value } }, 'انحفظ ✓'); } catch (err) { fail(err); } });
+  view.on('change', '[data-pic]', async (e, inp) => {
+    const file = inp.files?.[0]; if (!file) return;
+    try { const data = await readImage(file, 640); toast('عم ترفع الصورة…', 'info'); await save({ picture: data }, 'تغيّرت صورة الواتساب ✓'); waSettings(view); } catch (err) { fail(err); }
+  });
+  view.on('click', '[data-pic-del]', async () => { if (!await confirmBox('رح تنشال صورة الواتساب.', { ok: 'شيلها', danger: true })) return; try { await save({ remove_picture: true }, 'انشالت الصورة'); waSettings(view); } catch (err) { fail(err); } });
+}

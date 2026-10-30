@@ -776,3 +776,53 @@ export function importNumbers(tenantId, nums) {
 }
 // «احفظ الأرقام القديمة هلق» (بعد ما يشترك، بدون ما يستنى الدورة الجاية)
 export function queueHistoryNow(tenantId) { queueAllKnown(tenantId); return contactsStats(tenantId); }
+
+// ===== إعدادات حساب الواتساب نفسو (من الجهاز المربوط): الاسم، النبذة، الصورة، الخصوصية، معلومات البزنس =====
+function liveSock(tenantId) {
+  const s = sessions.get(tenantId);
+  if (!s?.sock || s.status !== 'open') throw new Error('واتساب مو مربوط هلّق. اربطو أول.');
+  return s.sock;
+}
+const selfJid = sock => String(sock.user?.id || '').replace(/:\d+@/, '@');
+const PRIVACY = {
+  last: ['updateLastSeenPrivacy', ['all', 'contacts', 'contact_blacklist', 'none']],
+  online: ['updateOnlinePrivacy', ['all', 'match_last_seen']],
+  profile: ['updateProfilePicturePrivacy', ['all', 'contacts', 'contact_blacklist', 'none']],
+  status: ['updateStatusPrivacy', ['all', 'contacts', 'contact_blacklist', 'none']],
+  readreceipts: ['updateReadReceiptsPrivacy', ['all', 'none']],
+  groupadd: ['updateGroupsAddPrivacy', ['all', 'contacts', 'contact_blacklist']],
+  calladd: ['updateCallPrivacy', ['all', 'known']]
+};
+export async function waProfile(tenantId) {
+  const sock = liveSock(tenantId), jid = selfJid(sock);
+  const [privacy, st, picture, biz] = await Promise.all([
+    sock.fetchPrivacySettings(true).catch(() => ({})),
+    sock.fetchStatus(jid).catch(() => null),
+    sock.profilePictureUrl(jid, 'image').catch(() => null),
+    sock.getBusinessProfile(jid).catch(() => null)
+  ]);
+  const about = st?.[0]?.status?.status ?? (typeof st?.[0]?.status === 'string' ? st[0].status : '');
+  return {
+    phone: jid.split('@')[0], name: sock.user?.name || sock.authState?.creds?.me?.name || '', about: about || '', picture: picture || null,
+    privacy: Object.fromEntries(Object.keys(PRIVACY).map(k => [k, privacy?.[k] ?? null])),
+    business: biz ? { description: biz.description || '', address: biz.address || '', email: biz.email || '', website: biz.website?.[0] || '', category: biz.category || '' } : null
+  };
+}
+export async function waUpdate(tenantId, b = {}) {
+  const sock = liveSock(tenantId), jid = selfJid(sock);
+  if (typeof b.name === 'string' && b.name.trim()) await sock.updateProfileName(b.name.trim().slice(0, 25));
+  if (typeof b.about === 'string') await sock.updateProfileStatus(b.about.slice(0, 139));
+  if (b.remove_picture) await sock.removeProfilePicture(jid);
+  else if (typeof b.picture === 'string' && b.picture.startsWith('data:image/')) await sock.updateProfilePicture(jid, Buffer.from(b.picture.split(',')[1] || '', 'base64'));
+  for (const [k, v] of Object.entries(b.privacy || {})) {
+    const p = PRIVACY[k]; if (!p || !p[1].includes(v)) continue;
+    await sock[p[0]](v);
+  }
+  if (b.business && typeof sock.updateBussinesProfile === 'function') {
+    const x = b.business, args = {};
+    for (const f of ['description', 'address', 'email']) if (typeof x[f] === 'string') args[f] = x[f].slice(0, 500);
+    if (typeof x.website === 'string') args.websites = x.website.trim() ? [x.website.trim().slice(0, 200)] : [];
+    await sock.updateBussinesProfile(args);
+  }
+  return waProfile(tenantId);
+}

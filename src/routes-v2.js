@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { DATA_DIR } from './config.js';
 import { q, tx, getSetting, usageToday } from './db.js';
-import { hashPassword, verifyPassword, createSession } from './security.js';
+import { hashPassword, verifyPassword, createSession, userFromToken } from './security.js';
 import { DEFAULT_SETTINGS, DEFAULT_KNOWLEDGE } from './tenants.js';
 import { clamp } from './text.js';
 import { router } from './routes.js';
@@ -139,6 +139,7 @@ r.get('/api/v2/me', ctx => {
   const t = ctx.tenant;
   return {
     user: userOut(ctx.user),
+    impersonating: (() => { const tok = readCookie(ctx, 'raddad_back'); const a = tok ? userFromToken(tok) : null; return a && a.is_super && a.id !== ctx.user.id ? { admin: a.name || 'المدير' } : null; })(),
     tenant: { id: t.id, name: t.name, slug: ensureSlug(t), status: t.status, wa_provider: t.wa_provider, wa_phone: t.wa_phone, contacts_prefix: t.settings.contacts_prefix || 'زبون' },
     wa: wa.status(t),
     services: servicesFor(t.id),
@@ -185,6 +186,39 @@ r.post('/api/v2/learn', async ctx => {
 r.del('/api/v2/learn/:id', async ctx => {
   owner(ctx);
   (await import('./style.js')).deleteExample(ctx.tenant.id, ctx.params.id);
+  return { ok: true };
+});
+
+// ===== إعدادات حساب الواتساب =====
+r.get('/api/v2/wa-profile', async ctx => {
+  owner(ctx);
+  try { return await qrConn.waProfile(ctx.tenant.id); } catch (e) { throw new HttpError(400, e.message); }
+});
+r.put('/api/v2/wa-profile', async ctx => {
+  owner(ctx);
+  try { return await qrConn.waUpdate(ctx.tenant.id, ctx.body); } catch (e) { throw new HttpError(400, e.message || 'واتساب رفض التعديل'); }
+});
+
+// ===== المدير: «ادخل كأنّو هو» ورجعة لحسابو =====
+const BACK = 'raddad_back';
+function cookieHeader(ctx, name, value, maxAge) {
+  const secure = (ctx.req.headers['x-forwarded-proto'] || '').includes('https');
+  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; Max-Age=${maxAge}${secure ? '; Secure; SameSite=None; Partitioned' : '; SameSite=Lax'}`;
+}
+const readCookie = (ctx, name) => { const m = String(ctx.req.headers.cookie || '').match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)')); return m ? decodeURIComponent(m[1]) : ''; };
+r.post('/api/admin/v2/tenants/:id/enter', ctx => {
+  sup(ctx);
+  const u = q.get("SELECT id FROM users WHERE tenant_id = ? ORDER BY (role = 'owner') DESC, id LIMIT 1", Number(ctx.params.id));
+  need(u, 404, 'ما في مستخدم بهالحساب');
+  need(u.id !== ctx.user.id, 400, 'هاد حسابك');
+  ctx.res.setHeader('Set-Cookie', [cookieHeader(ctx, 'raddad_sid', createSession(u.id), 12 * 3600), cookieHeader(ctx, BACK, ctx.token, 30 * 86400)]);
+  return { ok: true };
+});
+r.post('/api/v2/back-to-admin', ctx => {
+  const tok = readCookie(ctx, BACK);
+  const admin = tok ? userFromToken(tok) : null;
+  need(admin && admin.is_super, 403, 'ما في حساب مدير ترجعلو');
+  ctx.res.setHeader('Set-Cookie', [cookieHeader(ctx, 'raddad_sid', tok, 30 * 86400), cookieHeader(ctx, BACK, '', 0)]);
   return { ok: true };
 });
 

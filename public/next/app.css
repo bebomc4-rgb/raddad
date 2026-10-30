@@ -435,3 +435,7 @@ kbd { font-family: inherit; font-size: 12.5px; padding: 1px 8px; border-radius: 
 .avatar-pick { position: relative; cursor: pointer; flex: none; }
 .avatar-cam { position: absolute; inset-inline-end: -2px; bottom: -2px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
   background: var(--primary); color: #fff; box-shadow: 0 0 0 3px var(--card, var(--bg)); }
+
+/* شريط «داخل على حساب مشترك» */
+.imp-bar { display: flex; align-items: center; gap: 10px; margin: 0 clamp(16px, 3vw, 34px) 6px; padding: 10px 14px; border-radius: 14px;
+  background: color-mix(in srgb, var(--gold) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); font-size: 14px; }

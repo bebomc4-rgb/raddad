@@ -7,6 +7,7 @@ const ROUTES = [
   ['/register', () => import('./p-public.js').then(m => m.register), { public: true, bare: true }],
   ['/home', () => import('./p-main.js').then(m => m.home)],
   ['/whatsapp', () => import('./p-main.js').then(m => m.whatsapp)],
+  ['/whatsapp/settings', () => import('./p-main.js').then(m => m.waSettings)],
   ['/numbers', () => import('./p-numbers.js').then(m => m.numbers)],
   ['/numbers/backup', () => import('./p-numbers.js').then(m => m.backup)],
   ['/bot', () => import('./p-bot.js').then(m => m.overview)],
@@ -175,7 +176,7 @@ async function router() {
   let main;
   if (route.bare) { app.innerHTML = '<main class="bare"><div class="bare-in"></div></main>'; main = app.firstElementChild; }
   else {
-    if (!app.querySelector('.shell')) app.innerHTML = '<div class="shell"><div data-side></div><main class="main"><header class="topbar"></header><div class="content"></div></main><div data-tabs></div></div>';
+    if (!app.querySelector('.shell')) app.innerHTML = '<div class="shell"><div data-side></div><main class="main"><header class="topbar"></header><div data-imp></div><div class="content"></div></main><div data-tabs></div></div>';
     paintNav(path);
     main = app.querySelector('.main');
     main.querySelector('.content').className = 'content';
@@ -202,6 +203,8 @@ export function paintNav(path = parseHash().path) {
   if (!me || !app.querySelector('.shell')) return;
   app.querySelector('[data-side]').innerHTML = renderSide(me, path);
   app.querySelector('[data-tabs]').innerHTML = renderTabs(me, path);
+  const imp = app.querySelector('[data-imp]');
+  if (imp) imp.innerHTML = me.impersonating ? `<div class="imp-bar">${icon('user')}<span class="grow">إنت داخل على حساب <b>${esc(me.tenant.name)}</b></span><button class="btn btn-sm" data-back-admin>ارجع لحسابي</button></div>` : '';
 }
 
 // تحديث خفيف لملخص الحساب (العدادات والحالة) بدون ما نعيد الصفحة
@@ -216,6 +219,7 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-more]')) { e.preventDefault(); openMore(); }
   if (e.target.closest('[data-user-menu]')) { e.preventDefault(); openUserMenu(); }
   if (e.target.closest('[data-logout-now]')) { e.preventDefault(); logout(); }
+  if (e.target.closest('[data-back-admin]')) { e.preventDefault(); api('/api/v2/back-to-admin', { method: 'POST', body: {} }).then(() => { location.hash = '#/admin/subscribers'; location.reload(); }).catch(fail); }
   const tt = e.target.closest('[data-theme-toggle]');
   if (tt) { const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; setTheme(next); tt.innerHTML = icon(next === 'light' ? 'moon' : 'sun'); }
 });
