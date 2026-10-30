@@ -4,6 +4,7 @@ import { getTenant } from './tenants.js';
 import { notifyOwner } from './agent.js';
 import { isActive } from './failover.js';
 import { checkServicesExpiring } from './services.js';
+import { remindCustomer, siteLink } from './notify.js';
 
 const WARN_DAYS = 3;
 
@@ -17,9 +18,10 @@ export function checkExpiring() {
     q.run('UPDATE tenants SET expiry_warned_for = ? WHERE id = ?', r.plan_expires_at, r.id);
     const days = Math.max(1, Math.ceil((r.plan_expires_at - now) / 86400));
     notifyOwner(getTenant(r.id), `⏰ اشتراكك بينتهي بعد ${days} ${days === 1 ? 'يوم' : 'أيام'}. جدّد من صفحة الاشتراك حتى ما يوقف الوكيل عن الرد.`);
+    remindCustomer(r.id, `مرحبا 👋\nاشتراكك بـ «المجيب الذكي» بـ K FAST AI بيخلص بعد ${days} ${days === 1 ? 'يوم' : 'أيام'}.\nجدّد من هون حتى ما يوقف: ${siteLink('/bot')}`);
   }
   // نفس الشي لاشتراكات حفظ الأرقام
-  checkServicesExpiring((tid, text) => notifyOwner(getTenant(tid), text));
+  checkServicesExpiring((tid, text, name) => { notifyOwner(getTenant(tid), text); remindCustomer(tid, `مرحبا 👋\n${text.replace('⏰ ', '')}\nجدّد من هون: ${siteLink('/numbers/new')}`); });
 }
 
 export function startSubscriptionWorker() {

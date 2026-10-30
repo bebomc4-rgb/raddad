@@ -163,6 +163,8 @@ server.listen(config.port, config.host, () => {
   startBatchWorker();
   startSubscriptionWorker();
   startAutoWorker();
+  import('./src/sitesync.js').then(m => m.startSiteSync()).catch(e => console.error('[site]', e.message));
+  Promise.all([import('./src/stories.js'), import('./src/routes-v2.js')]).then(([S, R]) => S.startStories(tid => isActive() && R.responderUnlocked(tid))).catch(e => console.error('[stories]', e.message));
   // الموبايل الاحتياط ما بيوجّه الرابط العام لعندو إلا لما يستلم (الكمبيوتر وقف)
   if (isActive()) startTunnel(config.port).catch(e => console.error('[link]', e.message));
   startFailover(on => on ? startTunnel(config.port).catch(e => console.error('[link]', e.message)) : stopTunnel());

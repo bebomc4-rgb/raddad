@@ -141,7 +141,7 @@ r.get('/api/v2/me', ctx => {
   return {
     user: userOut(ctx.user),
     impersonating: (() => { const tok = readCookie(ctx, 'raddad_back'); const a = tok ? userFromToken(tok) : null; return a && a.is_super && a.id !== ctx.user.id ? { admin: a.name || 'المدير' } : null; })(),
-    tenant: { id: t.id, name: t.name, slug: ensureSlug(t), status: t.status, wa_provider: t.wa_provider, wa_phone: t.wa_phone, contacts_prefix: t.settings.contacts_prefix || 'زبون' },
+    tenant: { id: t.id, name: t.name, slug: ensureSlug(t), status: t.status, wa_provider: t.wa_provider, wa_phone: t.wa_phone, contacts_prefix: t.settings.contacts_prefix || 'زبون', site_url: t.settings.site_url || '', site_sync: !!t.settings.site_sync },
     wa: wa.status(t),
     services: servicesFor(t.id),
     responder: responderState(t),
@@ -258,6 +258,47 @@ r.post('/api/v2/back-to-admin', ctx => {
   return { ok: true };
 });
 
+// ===== ربط موقع الزبون =====
+r.post('/api/v2/site-sync', async ctx => {
+  owner(ctx);
+  need(rateLimit('site:' + ctx.tenant.id, 10, 3600_000), 429, 'جرّبت كتير، استنى شوي');
+  const url = String(ctx.body.url || '').trim().slice(0, 300), auto = !!ctx.body.auto;
+  const { syncSite } = await import('./sitesync.js');
+  let res;
+  try { res = await syncSite(ctx.tenant.id, url); } catch (e) { throw new HttpError(400, e.message); }
+  const t = getTenant(ctx.tenant.id);
+  q.run('UPDATE tenants SET settings = ? WHERE id = ?', JSON.stringify({ ...t.settings, site_url: url, site_sync: auto }), t.id);
+  return res;
+});
+r.put('/api/v2/site-sync', ctx => {
+  owner(ctx);
+  const t = ctx.tenant;
+  q.run('UPDATE tenants SET settings = ? WHERE id = ?', JSON.stringify({ ...t.settings, site_sync: !!ctx.body.auto }), t.id);
+  return { ok: true };
+});
+
+// ===== حالات واتساب أوتوماتيك (جزء من المجيب) =====
+r.get('/api/v2/stories', async ctx => {
+  owner(ctx);
+  const S = await import('./stories.js'), t = ctx.tenant;
+  return { settings: { enabled: false, per_day: 1, ...(t.settings.status_auto || {}) }, slots: S.SLOTS, log: S.storyLog(t.id), unlocked: responderState(t).unlocked,
+    with_images: q.get("SELECT COUNT(*) n FROM products WHERE tenant_id = ? AND image_url IS NOT NULL AND image_url != ''", t.id).n };
+});
+r.put('/api/v2/stories', ctx => {
+  owner(ctx);
+  const t = ctx.tenant, on = !!ctx.body.enabled, per = [1, 2, 3].includes(Number(ctx.body.per_day)) ? Number(ctx.body.per_day) : 1;
+  if (on) need(responderState(t).unlocked, 403, 'الحالات جزء من المجيب الذكي. اشترك فيه أول.');
+  q.run('UPDATE tenants SET settings = ? WHERE id = ?', JSON.stringify({ ...t.settings, status_auto: { enabled: on, per_day: per } }), t.id);
+  return { ok: true };
+});
+r.post('/api/v2/stories/now', async ctx => {
+  owner(ctx);
+  need(responderState(ctx.tenant).unlocked, 403, 'الحالات جزء من المجيب الذكي. اشترك فيه أول.');
+  need(rateLimit('story:' + ctx.tenant.id, 4, 3600_000), 429, 'نشرت كتير هالساعة. استنى شوي حتى ما ينزعج واتساب.');
+  try { return await (await import('./stories.js')).postStory(ctx.tenant.id); } catch (e) { throw new HttpError(400, e.message); }
+});
+export const responderUnlocked = tid => { const t = getTenant(tid); return !!t && responderState(t).unlocked; };
+
 r.put('/api/v2/responder', ctx => {
   owner(ctx);
   const on = !!ctx.body.enabled;
@@ -319,6 +360,12 @@ r.post('/api/v2/billing/request', ctx => {
   }
   q.run('INSERT INTO payment_requests (tenant_id, plan_id, service_id, months, method, status, amount, receipt, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ctx.tenant.id, planId, serviceId, kind === 'service' ? ctx.body.months : months, method === 'shamcash' ? 'شام كاش' : 'كاش بالمركز', status, amount, receiptUrl, ph);
+  // تنبيه لصاحب المنصة عالواتس
+  import('./notify.js').then(N => {
+    const what = serviceId ? (q.get('SELECT name FROM services WHERE id = ?', serviceId)?.name || serviceId) : 'المجيب الذكي';
+    const m = kind === 'service' ? ctx.body.months : months, per = m ? (m === 1 ? 'شهر' : m === 12 ? 'سنة' : `${m} شهور`) : 'دفعة وحدة';
+    N.notifyAdmin(`💳 طلب اشتراك جديد\n${ctx.tenant.name} (${N.customerPhone(ctx.tenant.id) || ph || '—'})\n«${what}» — ${per} — ${amount}$\nالدفع: ${method === 'shamcash' ? 'شام كاش' : 'كاش بالمركز'}\nوافق من هون: ${N.siteLink('/admin/payments')}`);
+  }).catch(() => {});
   return { ok: true };
 });
 
@@ -413,6 +460,51 @@ r.post('/api/admin/v2/tenants/:id/service', ctx => {
 
 r.get('/api/admin/v2/services', ctx => { sup(ctx); return listServices({ all: true }); });
 r.put('/api/admin/v2/services', ctx => { sup(ctx); saveServices(ctx.body.services); return listServices({ all: true }); });
+
+// ===== لوحة الأرباح =====
+r.get('/api/admin/v2/revenue', async ctx => {
+  sup(ctx);
+  const N = await import('./notify.js');
+  const now = Math.floor(Date.now() / 1000), d = new Date();
+  const mStart = Math.floor(new Date(d.getFullYear(), d.getMonth(), 1) / 1000), lStart = Math.floor(new Date(d.getFullYear(), d.getMonth() - 1, 1) / 1000);
+  const supers = new Set(q.all('SELECT DISTINCT tenant_id FROM users WHERE is_super = 1').map(r => r.tenant_id));
+  const paid = q.all("SELECT p.tenant_id, p.service_id, p.plan_id, p.months, p.amount, p.created_at FROM payment_requests p WHERE p.status = 'approved'");
+  const sum = rows => Math.round(rows.reduce((a, r) => a + (Number(r.amount) || 0), 0) * 100) / 100;
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const a = Math.floor(new Date(d.getFullYear(), d.getMonth() - i, 1) / 1000), b = Math.floor(new Date(d.getFullYear(), d.getMonth() - i + 1, 1) / 1000);
+    const rows = paid.filter(r => r.created_at >= a && r.created_at < b);
+    months.push({ label: `${new Date(a * 1000).getMonth() + 1}/${String(new Date(a * 1000).getFullYear()).slice(2)}`, total: sum(rows), count: rows.length });
+  }
+  const prod = r => r.service_id || 'responder';
+  const names = { responder: 'المجيب الذكي', ...Object.fromEntries(q.all('SELECT id, name FROM services').map(s => [s.id, s.name])) };
+  const byProduct = Object.entries(names).map(([id, name]) => { const rows = paid.filter(r => prod(r) === id); return { id, name, total: sum(rows), count: rows.length }; });
+  const pend = q.get("SELECT COUNT(*) n, COALESCE(SUM(amount), 0) s FROM payment_requests WHERE status IN ('pending', 'awaiting_delivery')");
+  const tname = id => getTenant(id)?.name || '#' + id;
+  const respActive = q.all("SELECT id, plan_expires_at FROM tenants WHERE plan_id != 'free' AND plan_expires_at > ? AND status = 'active'", now).filter(t => !supers.has(t.id));
+  const svcRows = q.all('SELECT tenant_id, service_id, expires_at FROM tenant_services').filter(r => !supers.has(r.tenant_id));
+  const live = r => r.expires_at == null || r.expires_at > now;
+  const soon = [], lapsed = [];
+  for (const t of q.all("SELECT id, plan_expires_at e FROM tenants WHERE plan_id != 'free' AND plan_expires_at IS NOT NULL")) {
+    if (supers.has(t.id)) continue;
+    if (t.e > now && t.e <= now + 7 * 86400) soon.push({ tenant_id: t.id, name: tname(t.id), phone: N.customerPhone(t.id), what: names.responder, expires_at: t.e });
+    if (t.e <= now && t.e > now - 30 * 86400) lapsed.push({ tenant_id: t.id, name: tname(t.id), phone: N.customerPhone(t.id), what: names.responder, expires_at: t.e });
+  }
+  for (const r of svcRows) {
+    if (r.expires_at == null) continue;
+    const row = { tenant_id: r.tenant_id, name: tname(r.tenant_id), phone: N.customerPhone(r.tenant_id), what: names[r.service_id] || r.service_id, expires_at: r.expires_at };
+    if (r.expires_at > now && r.expires_at <= now + 7 * 86400) soon.push(row);
+    if (r.expires_at <= now && r.expires_at > now - 30 * 86400) lapsed.push(row);
+  }
+  return {
+    total: sum(paid), this_month: sum(paid.filter(r => r.created_at >= mStart)), last_month: sum(paid.filter(r => r.created_at >= lStart && r.created_at < mStart)),
+    payments: paid.length, pending: { count: pend.n, amount: pend.s }, months, byProduct,
+    active: { responder: respActive.length, contacts_new: svcRows.filter(r => r.service_id === 'contacts_new' && live(r)).length, contacts_old: svcRows.filter(r => r.service_id === 'contacts_old').length },
+    accounts: q.all('SELECT id FROM tenants').filter(t => !supers.has(t.id)).length,
+    new_accounts: q.all('SELECT id FROM tenants WHERE created_at >= ?', mStart).filter(t => !supers.has(t.id)).length,
+    soon: soon.sort((a, b) => a.expires_at - b.expires_at), lapsed: lapsed.sort((a, b) => b.expires_at - a.expires_at)
+  };
+});
 
 r.get('/api/admin/v2/payments', ctx => {
   sup(ctx);

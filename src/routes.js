@@ -1007,14 +1007,18 @@ r.post('/api/admin/payments/:id', ctx => {
   const p = q.get('SELECT * FROM payment_requests WHERE id = ?', Number(ctx.params.id));
   need(p && ['pending', 'awaiting_delivery'].includes(p.status), 400, 'الطلب مو معلّق');
   const approve = ctx.body.action === 'approve';
+  const what = p.service_id ? (q.get('SELECT name FROM services WHERE id = ?', p.service_id)?.name || p.service_id) : 'المجيب الذكي';
   tx(() => {
     q.run('UPDATE payment_requests SET status = ? WHERE id = ?', approve ? 'approved' : 'rejected', p.id);
     if (approve && p.service_id) grantService(p.tenant_id, p.service_id, p.months); // حفظ الأرقام: منتج منفصل
     else if (approve) {
       const t = q.get('SELECT plan_id, plan_expires_at FROM tenants WHERE id = ?', p.tenant_id);
       const base = t.plan_id === p.plan_id ? Math.max(t.plan_expires_at || 0, Date.now() / 1000) : Date.now() / 1000;
-      q.run('UPDATE tenants SET plan_id = ?, plan_expires_at = ? WHERE id = ?', p.plan_id, Math.floor(base + periodDays(p.months) * 86400), p.tenant_id);
+      q.run('UPDATE tenants SET plan_id = ?, plan_expires_at = ?, bot_enabled = 1 WHERE id = ?', p.plan_id, Math.floor(base + periodDays(p.months) * 86400), p.tenant_id);
     }
   });
+  import('./notify.js').then(N => N.remindCustomer(p.tenant_id, approve
+    ? `✅ تفعّل اشتراكك بـ «${what}» بـ K FAST AI. شكراً إلك!\n${N.siteLink(p.service_id === 'contacts_old' ? '/numbers/old' : p.service_id ? '/numbers/new' : '/bot')}`
+    : `ما قدرنا نأكّد دفعتك لـ «${what}». إذا حوّلت، ابعتلنا صورة التحويل عالواتس ومنرجع نشوفها.`)).catch(() => {});
   return { ok: true };
 });

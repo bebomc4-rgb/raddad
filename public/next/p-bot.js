@@ -135,7 +135,15 @@ export async function products(view) {
     const r = await api(`/api/products?q=${encodeURIComponent(q)}&page=${page}`);
     items = more ? items.concat(r.items) : r.items; total = r.total; if (view.alive) draw();
   };
+  const me = state.me || {};
+  const site = { url: me.tenant?.site_url || '', auto: !!me.tenant?.site_sync };
   const draw = () => view.html(html`<div class="stack">
+    <div class="card pad-lg stack-sm">
+      <div class="row between"><h3>${ic('link')} اربط موقعك</h3><span class="small muted">Shopify، WooCommerce، أو رابط ملف منتجات</span></div>
+      <p class="small muted">إذا عندك موقع، منسحب منو كل منتجاتك بأسعارها وصورها، والمجيب بيصير يعرفها.</p>
+      <div class="input-group"><input class="input" data-site dir="ltr" placeholder="https://your-store.com" value="${site.url}"><button class="btn btn-primary" data-site-go>${ic('download')} اسحب المنتجات</button></div>
+      <label class="check"><input type="checkbox" data-site-auto ${site.auto ? 'checked' : ''}><span>حدّث المنتجات من موقعي لحالو كل 6 ساعات</span></label>
+    </div>
     <div class="row between"><input class="input" style="max-width:360px" data-q type="search" placeholder="دوّر بالاسم أو التصنيف" value="${q}">
       <span class="row"><button class="btn" data-import>${ic('upload')} استيراد</button><button class="btn btn-primary" data-add>${ic('plus')} منتج جديد</button></span></div>
     <span class="small muted">${n(total)} منتج</span>
@@ -152,6 +160,12 @@ export async function products(view) {
   view.on('click', '[data-add]', () => editProduct(null, () => load()));
   view.on('click', '[data-edit]', (e, c) => editProduct(items.find(p => p.id === Number(c.dataset.edit)), () => load()));
   view.on('click', '[data-import]', () => importProducts(() => load()));
+  view.on('click', '[data-site-go]', (e, b) => busy(b, async () => {
+    try { const r = await api('/api/v2/site-sync', { method: 'POST', body: { url: view.el.querySelector('[data-site]').value, auto: view.el.querySelector('[data-site-auto]').checked } });
+      toast(`تمام: ${n(r.added)} منتج جديد، و${n(r.updated)} تحدّث`); site.url = view.el.querySelector('[data-site]').value; await loadMe(); page = 1; await load(); }
+    catch (err) { fail(err); }
+  }));
+  view.on('change', '[data-site-auto]', async (e, i) => { try { await api('/api/v2/site-sync', { method: 'PUT', body: { auto: i.checked } }); site.auto = i.checked; toast(i.checked ? 'رح تتحدّث المنتجات لحالها كل 6 ساعات' : 'وقّف التحديث التلقائي'); } catch (err) { fail(err); } });
 }
 function editProduct(p, done) {
   const v = p || { active: 1, currency: 'USD' };
@@ -390,4 +404,31 @@ export async function learn(view) {
   view.on('click', '[data-analyze]', (e, b) => busy(b, async () => {
     try { await api('/api/style/analyze', { method: 'POST', body: {} }); toast('حلّل أسلوبك وصار يقلّدو ✓'); await draw(); } catch (err) { fail(err); }
   }));
+}
+
+// ===== حالات واتساب (ستوري) أوتوماتيك =====
+export async function stories(view) {
+  view.title('الحالات (ستوري)', 'منتج من منتجاتك بينحط حالة بالواتس لحالو', '/bot');
+  const paint = async () => {
+    const d = await api('/api/v2/stories'); if (!view.alive) return;
+    const s = d.settings;
+    view.html(html`<div class="stack" style="max-width:860px">
+      ${!d.unlocked ? html`<div class="note">${ic('lock')}<span class="grow">الحالات الأوتوماتيك جزء من المجيب الذكي. اشترك فيه وبتشتغل عندك.</span><a class="btn btn-sm btn-primary" href="#/bot">اشترك</a></div>` : ''}
+      <div class="card pad-lg glow">
+        <div class="row between"><span class="row nowrap"><span class="ico lg gold">${ic('sparkle')}</span><span><h2>${s.enabled ? 'الحالات شغّالة' : 'الحالات مطفية'}</h2><span class="muted small">صورة المنتج + الاسم + السعر + «للطلب راسلنا»</span></span></span>
+          ${d.unlocked ? html`<label class="switch" style="transform:scale(1.15)"><input type="checkbox" data-on ${s.enabled ? 'checked' : ''}><span></span></label>` : ''}</div>
+        <div class="field" style="margin-top:16px"><label>كم مرة باليوم؟</label><div class="seg" data-per>${[1, 2, 3].map(k => html`<button data-p="${k}" class="${s.per_day === k ? 'on' : ''}">${k === 1 ? 'مرة' : k === 2 ? 'مرتين' : '3 مرات'}</button>`)}</div>
+          <span class="hint">بتنزل الساعة: ${(d.slots[s.per_day] || d.slots[1]).map(h => (h > 12 ? h - 12 : h) + (h >= 12 ? ' المسا' : ' الصبح')).join('، ')}</span></div>
+        <div class="row" style="margin-top:12px"><button class="btn" data-now ${d.unlocked ? '' : 'disabled'}>${ic('play')} انشر حالة هلّق</button><span class="small muted">${n(d.with_images)} منتج إلو صورة</span></div>
+      </div>
+      <div class="note warn">${ic('alert')}<span><b>هل ممكن ينحظر الرقم؟</b> نشر الحالات شي عادي بواتساب. الخطر بيجي إذا كترت كتير أو صارت مزعجة. لهيك حطّينا حد: 3 مرات باليوم بالأكتر، وبتوصل لأحدث 3000 رقم بس، وكل منتج ما بيتكرر قبل 10 أيام. الربط نفسو غير رسمي، فخلّي النشر معتدل.</span></div>
+      <div class="card pad-lg"><div class="card-h"><h3>${ic('history')} آخر الحالات</h3></div>
+        ${d.log.length ? html`<div class="list">${d.log.map(x => html`<div class="item"><span class="ico ${x.ok ? 'green' : ''}">${ic(x.ok ? 'check' : 'alert')}</span><span class="grow"><span class="t">${x.name}</span><br><span class="s">${ago(x.ts)}${x.ok ? ` · وصلت لـ ${n(x.to)} رقم` : ` · ${x.err}`}</span></span></div>`)}</div>` : html`<p class="muted small">لسا ما انتشرت حالات.</p>`}</div>
+    </div>`);
+  };
+  await paint();
+  const save = async body => { const d = await api('/api/v2/stories'); await api('/api/v2/stories', { method: 'PUT', body: { ...d.settings, ...body } }); await paint(); };
+  view.on('change', '[data-on]', async (e, i) => { try { await save({ enabled: i.checked }); toast(i.checked ? 'الحالات اشتغلت ✓' : 'وقفت الحالات'); } catch (err) { fail(err); i.checked = !i.checked; } });
+  view.on('click', '[data-per] button', async (e, b) => { try { await save({ per_day: Number(b.dataset.p) }); } catch (err) { fail(err); } });
+  view.on('click', '[data-now]', (e, b) => busy(b, async () => { try { const r = await api('/api/v2/stories/now', { method: 'POST', body: {} }); toast(`انتشرت حالة «${r.name}» لـ ${n(r.to)} رقم ✓`); await paint(); } catch (err) { fail(err); } }));
 }

@@ -32,7 +32,10 @@ export const DEFAULT_SETTINGS = {
   test_mode: false,           // وضع الاختبار: البوت بيرد بس على أرقام محددة
   test_numbers: '',
   gemini_prompts: ['', '', ''], // 3 برومبتات ثابتة لكل منتج
-  contacts_prefix: 'زبون'      // اسم الرقم المحفوظ: «زبون 1234»
+  contacts_prefix: 'زبون',     // اسم الرقم المحفوظ: «زبون 1234»
+  site_url: '',                // موقع الزبون (منسحب منو المنتجات)
+  site_sync: false,            // تحديث المنتجات من الموقع كل 6 ساعات
+  status_auto: { enabled: false, per_day: 1 } // حالات واتساب أوتوماتيك
 };
 
 export const DEFAULT_KNOWLEDGE = {

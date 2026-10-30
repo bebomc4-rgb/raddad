@@ -220,3 +220,28 @@ export async function tools(view) {
     <div class="grid g3">${T.map(([h, i, t]) => html`<a class="card row nowrap" href="/#/${h}" target="_blank" rel="noopener"><span class="ico">${ic(i)}</span><span class="grow"><b>${t}</b></span>${ic('ext')}</a>`)}
       <a class="card row nowrap" href="/meta" target="_blank" rel="noopener"><span class="ico">${ic('chat')}</span><span class="grow"><b>ردود التعليقات (فيسبوك/إنستا)</b></span>${ic('ext')}</a></div></div>`);
 }
+
+// ===== لوحة الأرباح =====
+export async function revenue(view) {
+  view.title('الأرباح', 'كل الدفعات يلي وافقت عليها', '/admin');
+  const d = await api('/api/admin/v2/revenue'); if (!view.alive) return;
+  const max = Math.max(1, ...d.months.map(m => m.total));
+  const wa = p => p ? `https://wa.me/${String(p).replace(/\D/g, '').replace(/^0/, '963')}` : '';
+  const list = (rows, empty, late) => rows.length ? html`<div class="list">${rows.map(r => html`<div class="item"><span class="grow"><span class="t">${r.name}</span> <span class="tag">${r.what}</span><br><span class="s">${late ? 'خلص' : 'بيخلص'} ${date(r.expires_at)} (${late ? ago(r.expires_at) : left(r.expires_at)})${r.phone ? ' · ' : ''}<span class="ltr">${r.phone || ''}</span></span></span>
+      ${r.phone ? html`<a class="btn btn-sm" target="_blank" rel="noopener" href="${wa(r.phone)}">${ic('wa')} راسلو</a>` : ''}</div>`)}</div>` : html`<p class="muted small">${empty}</p>`;
+  view.html(html`<div class="stack">
+    <div class="grid g4">
+      <div class="card stat glow"><span class="k">هالشهر</span><span class="v num">${money(d.this_month)}</span><span class="tiny faint">الشهر الماضي ${money(d.last_month)}</span></div>
+      <div class="card stat"><span class="k">المجموع من البداية</span><span class="v num">${money(d.total)}</span><span class="tiny faint">${n(d.payments)} دفعة</span></div>
+      <a class="card stat" href="#/admin/payments"><span class="k">ناطرة موافقتك</span><span class="v num">${n(d.pending.count)}</span><span class="tiny faint">${money(d.pending.amount)}</span></a>
+      <div class="card stat"><span class="k">الحسابات</span><span class="v num">${n(d.accounts)}</span><span class="tiny faint">${n(d.new_accounts)} جديد هالشهر</span></div>
+    </div>
+    <div class="card pad-lg"><div class="card-h"><h3>${ic('chart')} آخر 12 شهر</h3></div>
+      <div class="rev-bars">${d.months.map(m => html`<div class="rev-col" title="${money(m.total)} · ${m.count} دفعة"><span class="rev-val num">${m.total ? money(m.total) : ''}</span><span class="rev-bar" style="height:${Math.max(2, Math.round(m.total / max * 160))}px"></span><span class="rev-lbl num">${m.label}</span></div>`)}</div></div>
+    <div class="grid g3">${d.byProduct.map(p => html`<div class="card stat"><span class="k">${p.name}</span><span class="v num">${money(p.total)}</span><span class="tiny faint">${n(p.count)} دفعة · ${n(d.active[p.id] || 0)} ${p.id === 'contacts_old' ? 'اشترى' : 'مشترك هلّق'}</span></div>`)}</div>
+    <div class="grid g2">
+      <div class="card pad-lg"><div class="card-h"><h3>${ic('clock')} بيخلصوا خلال أسبوع</h3></div>${list(d.soon, 'ما في حدا اشتراكو قرب يخلص.')}</div>
+      <div class="card pad-lg"><div class="card-h"><h3>${ic('alert')} خلصوا وما جدّدوا (آخر 30 يوم)</h3></div>${list(d.lapsed, 'ما في حدا خلص اشتراكو وما جدّد.', true)}</div>
+    </div>
+  </div>`);
+}

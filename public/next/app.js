@@ -20,11 +20,13 @@ const ROUTES = [
   ['/bot/products', () => import('./p-bot.js').then(m => m.products)],
   ['/bot/settings', () => import('./p-bot.js').then(m => m.settings)],
   ['/bot/try', () => import('./p-bot.js').then(m => m.tryout)],
+  ['/bot/status', () => import('./p-bot.js').then(m => m.stories)],
   ['/bot/learn', () => import('./p-bot.js').then(m => m.learn)],
   ['/billing', () => import('./p-billing.js').then(m => m.billing)],
   ['/account', () => import('./p-main.js').then(m => m.account)],
   ['/admin', () => import('./p-admin.js').then(m => m.overview), { admin: true }],
   ['/admin/payments', () => import('./p-admin.js').then(m => m.payments), { admin: true }],
+  ['/admin/revenue', () => import('./p-admin.js').then(m => m.revenue), { admin: true }],
   ['/admin/subscribers', () => import('./p-admin.js').then(m => m.subscribers), { admin: true }],
   ['/admin/prices', () => import('./p-admin.js').then(m => m.prices), { admin: true }],
   ['/admin/settings', () => import('./p-admin.js').then(m => m.platform), { admin: true }],
@@ -61,7 +63,8 @@ function navItems(me) {
       { href: '/account', label: 'الملف الشخصي', icon: 'user' } ] }
   ];
   if (me.user.is_super) items.push({ group: 'الإدارة', links: [
-    { href: '/admin', label: 'نظرة عامة', icon: 'chart' },
+    { href: '/admin', label: 'نظرة عامة', icon: 'grid' },
+    { href: '/admin/revenue', label: 'الأرباح', icon: 'chart' },
     { href: '/admin/payments', label: 'طلبات الدفع', icon: 'shield', badge: state.adminBadge || 0 },
     { href: '/admin/subscribers', label: 'المشتركين', icon: 'users' },
     { href: '/admin/prices', label: 'الأسعار والباقات', icon: 'tag' },
@@ -211,7 +214,7 @@ export function paintNav(path = parseHash().path) {
   app.querySelector('[data-tabs]').innerHTML = renderTabs(me, path);
   const sn = app.querySelector('[data-subnav]');
   if (sn) {
-    const BOT = [['/bot', 'التشغيل والاشتراك'], ['/bot/inbox', 'المحادثات'], ['/bot/orders', 'الطلبات'], ['/bot/products', 'المنتجات'], ['/bot/settings', 'الشخصية'], ['/bot/learn', 'علّم المجيب'], ['/bot/try', 'جرّبو']];
+    const BOT = [['/bot', 'التشغيل والاشتراك'], ['/bot/inbox', 'المحادثات'], ['/bot/orders', 'الطلبات'], ['/bot/products', 'المنتجات'], ['/bot/settings', 'الشخصية'], ['/bot/learn', 'علّم المجيب'], ['/bot/status', 'الحالات'], ['/bot/try', 'جرّبو']];
     const cur = BOT.filter(([h]) => path === h || path.startsWith(h + '/')).sort((a, b) => b[0].length - a[0].length)[0]?.[0];
     sn.innerHTML = path === '/bot' || path.startsWith('/bot/') ? `<nav class="subnav">${BOT.map(([h, t]) => `<a href="#${h}" class="${h === cur ? 'on' : ''}">${esc(t)}</a>`).join('')}</nav>` : '';
   }

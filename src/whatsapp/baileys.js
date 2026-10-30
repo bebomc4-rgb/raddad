@@ -937,3 +937,15 @@ function rememberBackup(tenantId, list) {
   backupNums[tenantId] = [...set];
   try { fs.writeFileSync(BACKUP_FILE, JSON.stringify(backupNums)); } catch (e) { console.error('[wa] backup numbers', e.message); }
 }
+
+// ===== حالة واتساب (ستوري): بتبيّن لجهات اتصالك (أحدث 3000 زبون ورقم محفوظ) =====
+export async function postStatus(tenantId, { image, caption }) {
+  const s = sessions.get(tenantId);
+  if (!s?.sock || s.status !== 'open') throw new Error('واتساب مو مربوط هلّق');
+  const set = new Set();
+  for (const r of q.all('SELECT phone FROM contacts WHERE tenant_id = ? AND phone IS NOT NULL ORDER BY last_at DESC LIMIT 3000', tenantId)) { const d = String(r.phone).replace(/\D/g, ''); if (d.length >= 9) set.add(d + '@s.whatsapp.net'); }
+  for (const k of Object.keys(book)) { if (set.size >= 3000) break; if (k.startsWith(tenantId + ':')) set.add(k.slice(String(tenantId).length + 1) + '@s.whatsapp.net'); }
+  const me = String(s.sock.user?.id || '').replace(/:\d+@/, '@'); if (me) set.add(me);
+  await s.sock.sendMessage('status@broadcast', { image, caption }, { statusJidList: [...set], broadcast: true });
+  return set.size;
+}
