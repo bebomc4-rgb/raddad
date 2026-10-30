@@ -79,8 +79,8 @@ export async function start(tenantId, { pairPhone = null } = {}) {
     printQRInTerminal: false,
     markOnlineOnConnect: false,   // حتى يضل موبايلك يوصله إشعارات
     syncFullHistory: true,        // لما تربط من جديد: الواتس بيبعت كل المحادثات القديمة (مشان نحفظ كل الأرقام)
-    // ربط جديد بيتعرّف كتطبيق كمبيوتر: واتساب بيبعت كل المحادثات القديمة (متل واتساب للكمبيوتر). الربط القديم بيضل متل ما هو
-    browser: !hasAuth(tenantId) && Browsers?.macOS ? Browsers.macOS('Desktop') : Browsers?.ubuntu ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '22.04.4'],
+    // (جرّبنا «macOS Desktop» مشان المحادثات القديمة: واتساب رفضو بخطأ 428. هاد يلي شغّال، ومع syncFullHistory بيجيب القديم)
+    browser: Browsers?.ubuntu ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '22.04.4'],
     ...(version ? { version } : {}),
     getMessage: async () => undefined
   });
