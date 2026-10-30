@@ -11,6 +11,7 @@ for (const k of ['log', 'info', 'warn']) {
   console[k] = (...a) => { if (typeof a[0] === 'string' && NOISY.test(a[0])) return; orig(...a); };
 }
 import { router } from './src/routes.js';
+import './src/routes-v2.js'; // نقاط الواجهة الجديدة (/next)
 import { HttpError, readBody, json, parseCookies, serveFile, fileVersion } from './src/http.js';
 import { userFromToken } from './src/security.js';
 import { getTenant } from './src/tenants.js';
@@ -132,6 +133,14 @@ const server = http.createServer(async (req, res) => {
       if (url.searchParams.has('v')) return serveFile(res, file, { cache: 'public, max-age=31536000, immutable' });
       const fresh = /\.(js|css|html|webmanifest)$/.test(safe);
       return serveFile(res, file, { cache: fresh ? 'no-cache' : 'public, max-age=86400' });
+    }
+    // الواجهة الجديدة (تجربة جنب القديمة): /next
+    if (pathname === '/next') { res.writeHead(301, { Location: '/next/' + (url.search || '') }); return res.end(); }
+    if (pathname.startsWith('/next/')) {
+      const NEXT = path.join(PUBLIC, 'next');
+      return serveFile(res, path.join(NEXT, 'index.html'), {
+        transform: html => html.replace(/(href|src)="\/next\/([\w./-]+\.(?:css|js))"/g, (m, a, f) => `${a}="/next/${f}?v=${fileVersion(path.join(NEXT, f))}"`)
+      });
     }
     // الصفحة الرئيسية: منحط رقم نسخة على app.js و app.css
     return serveFile(res, path.join(PUBLIC, 'index.html'), {

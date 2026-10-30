@@ -31,7 +31,8 @@ export const DEFAULT_SETTINGS = {
   learn_from_history: true,   // يقرا آخر محادثاتك لما تربط الرقم أول مرة
   test_mode: false,           // وضع الاختبار: البوت بيرد بس على أرقام محددة
   test_numbers: '',
-  gemini_prompts: ['', '', '']  // 3 برومبتات ثابتة لكل منتج
+  gemini_prompts: ['', '', ''], // 3 برومبتات ثابتة لكل منتج
+  contacts_prefix: 'زبون'      // اسم الرقم المحفوظ: «زبون 1234»
 };
 
 export const DEFAULT_KNOWLEDGE = {

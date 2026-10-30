@@ -8,6 +8,7 @@ import { phoneFromJid } from '../text.js';
 import { getTenant } from '../tenants.js';
 import { trialStatus } from '../trial.js';
 import { isActive } from '../failover.js';
+import { hasService, contactsOn } from '../services.js';
 
 const sessions = new Map(); // tenantId -> state
 let B = null;               // مكتبة Baileys (بتنحمّل وقت الحاجة)
@@ -71,7 +72,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
 
   const sock = makeWASocket({
     auth: state,
-    logger: Number(tenantId) === KO_TENANT ? syncLogger : silent, // بس رسائل مزامنة جهات الاتصال (لنعرف ليش الواتس ما بيطبّق الحفظ)
+    logger: makeSyncLogger(tenantId), // بس رسائل مزامنة جهات الاتصال (لنعرف ليش الواتس ما بيطبّق الحفظ)
     printQRInTerminal: false,
     markOnlineOnConnect: false,   // حتى يضل موبايلك يوصله إشعارات
     syncFullHistory: true,        // لما تربط من جديد: الواتس بيبعت كل المحادثات القديمة (مشان نحفظ كل الأرقام)
@@ -128,7 +129,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
       setTimeout(() => auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)), 45000); // فحص عند الطلب بس
       clearInterval(s.auditTimer); s.auditTimer = setInterval(() => { auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)); resaveFromFile(tenantId); }, 30_000); // ملفات الطلب بتتفحص كل 30 ثانية
       setTimeout(() => queueAllKnown(tenantId), 90000); // بعد ما يخلص مزامنة الواتس، منحفظ كل الأرقام يلي راسلت قبل
-      trialStatus(getTenant(tenantId)); // بيسجّل الرقم أو بيطلّع تنبيه للإدارة إذا استخدم التجربة
+      { const tt = getTenant(tenantId); if (tt?.bot_enabled) trialStatus(tt); } // بيسجّل الرقم للتجربة بس إذا المجيب شغّال (يلي بدو حفظ الأرقام بس ما بتنحرق تجربتو)
     }
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
@@ -183,7 +184,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
       }
       if (lidHits) console.log(`[wa] tenant ${tenantId}: ${lidHits} archived/hidden chats matched to numbers`);
       rememberHistory(tenantId, list);
-      if (bookReady(tenantId)) queueContacts(tenantId, list);
+      if (bookReady(tenantId) && hasService(tenantId, 'contacts_old')) queueContacts(tenantId, list); // الأرقام القديمة: بس لمشتركين «حفظ الأرقام القديمة»
     } catch (e) { console.error('[wa] history contacts', e.message); }
     try {
       if (!messages?.length) return;
@@ -230,7 +231,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
           if (ph) found.push({ phone: ph });
         } catch {}
       }
-      if (found.length) queueContacts(tenantId, found);
+      if (found.length && hasService(tenantId, 'contacts_new')) queueContacts(tenantId, found);
       return;
     }
     const { handleInbound, isBotSent, botWillHandle } = await import('../agent.js');
@@ -249,7 +250,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
           if (!phone) rememberLid(tenantId, jid);
         }
         // تفاعل (❤️👍) أو رسالة فاضية: البوت ما بيرد عليها، بس الرقم لازم ينحفظ
-        if (!text && !mediaNote) { if (phone) saveContact(tenantId, phone, '').catch(() => {}); continue; }
+        if (!text && !mediaNote) { if (phone && hasService(tenantId, 'contacts_new')) saveContact(tenantId, phone, '').catch(() => {}); continue; }
         // بس الأرقام يلي البوت رح يرد عليها: منعلّمها مقروءة ومنحلّل صوتها وصورها. الباقي بيضل متل ما هو (مو مقروء) لترد إنت
         const mine = !m.key.fromMe && botWillHandle(tenantId, { jid, phone });
         if (mine) sock.readMessages([m.key]).catch(() => {});
@@ -265,10 +266,10 @@ export async function start(tenantId, { pairPhone = null } = {}) {
           if (Number(tenantId) === KO_TENANT) { learnInfo(tenantId, phone, chatInfo(tenantId, phone, text)); rescanChat(tenantId, phone); }
           const now = realNames[key] || '';
           if (now !== before) { keepNames(); console.log(`[wa] tenant ${tenantId}: name for ${phone}: «${now}»`); }
-          (now && now !== before ? saveContact(tenantId, phone, now, true) : saveContact(tenantId, phone, '')).catch(() => {});
+          if (hasService(tenantId, 'contacts_new')) (now && now !== before ? saveContact(tenantId, phone, now, true) : saveContact(tenantId, phone, '')).catch(() => {});
         }
         // إنت يلي بعتت أول (من الموبايل): الرقم لازم ينحفظ كمان
-        if (m.key.fromMe && phone) saveContact(tenantId, phone, '').catch(() => {});
+        if (m.key.fromMe && phone && hasService(tenantId, 'contacts_new')) saveContact(tenantId, phone, '').catch(() => {});
         console.log(`[wa] tenant ${tenantId}: ${m.key.fromMe ? 'you replied to' : 'message from'} ${phone || jid}: ${(text || mediaNote || '').slice(0, 60).replace(/\n/g, ' ')}`);
         handleInbound(tenantId, { jid, phone, name: m.pushName || null, text, mediaNote, mediaUrl, waId: m.key.id, fromMe: !!m.key.fromMe });
       } catch (e) { console.error('[wa] inbound', e.message); }
@@ -347,7 +348,7 @@ function mediaSource(url) {
 const SAVED_FILE = path.join(DATA_DIR, 'wa-saved-contacts.json');
 let saved = {}; try { saved = JSON.parse(fs.readFileSync(SAVED_FILE, 'utf8')); } catch {}
 let savedT = null;
-const KO_TENANT = Number(process.env.KO_TENANT_ID || 1); // حفظ جهات الاتصال بس لمتجر Ko Sport
+const KO_TENANT = Number(process.env.KO_TENANT_ID || 1); // متجر Ko Sport: إلو تعلّم الأسماء الحقيقية من المحادثات
 // الأسماء الحقيقية يلي الزبون كتبها بالمحادثة أو بطلب (مو اسم الواتس)
 const NAMES_FILE = path.join(DATA_DIR, 'ko-names.json');
 let realNames = {}; try { realNames = JSON.parse(fs.readFileSync(NAMES_FILE, 'utf8')); } catch {}
@@ -442,8 +443,8 @@ export function bookName(tenantId, phone) {
 }
 // منطلب من الواتس نسخة كاملة من جهات الاتصال (الأسماء المحفوظة عندك) مشان نعرف مين مسجّل ومين لأ
 async function bookResync(tenantId, sock, state) {
-  if (Number(tenantId) !== KO_TENANT || typeof sock.resyncAppState !== 'function') return;
-  const flag = path.join(DATA_DIR, `wa-book-synced-${tenantId}.txt`);
+  if (!contactsOn(tenantId) || typeof sock.resyncAppState !== 'function') return;
+  const flag = bookFlag(tenantId);
   if (bookReady(tenantId) && fs.existsSync(flag)) return;
   const before = Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length;
   console.log(`[wa] tenant ${tenantId}: fetching your saved contact names from WhatsApp…`);
@@ -452,7 +453,8 @@ async function bookResync(tenantId, sock, state) {
   await new Promise(r => setTimeout(r, 4000));
   const after = Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length;
   console.log(`[wa] tenant ${tenantId}: address book now has ${after} saved names (was ${before})`);
-  if (after >= 10) { try { fs.writeFileSync(flag, new Date().toISOString()); } catch {} setTimeout(() => queueAllKnown(tenantId), 5000); }
+  try { fs.writeFileSync(flag, new Date().toISOString()); } catch {} // وصل دفتر العناوين (حتى لو فيه أسماء قليلة)
+  setTimeout(() => queueAllKnown(tenantId), 5000);
 }
 // نصوص رسائل الزباين من المحادثات القديمة (مشان نرجع نفتش فيها عن أسماءهن بأي وقت)
 const TEXTS_FILE = path.join(DATA_DIR, 'wa-history-texts.json');
@@ -477,7 +479,7 @@ async function resolveLids(tenantId) {
   const left = [], found = [];
   for (const lid of a) { let pn = ''; try { pn = await map.getPNForLID(lid); } catch {} if (pn && /@s\.whatsapp\.net$/.test(pn)) found.push({ phone: phoneFromJid(pn) }); else left.push(lid); }
   histLids[tenantId] = left; try { fs.writeFileSync(LIDS_FILE, JSON.stringify(histLids)); } catch {}
-  if (found.length) { rememberHistory(tenantId, found); if (bookReady(tenantId)) queueContacts(tenantId, found); }
+  if (found.length) { rememberHistory(tenantId, found); if (bookReady(tenantId) && contactsOn(tenantId)) queueContacts(tenantId, found); }
   console.log(`[wa] tenant ${tenantId}: hidden chats — ${found.length} matched now, ${left.length} still unknown`);
   return found.length;
 }
@@ -530,30 +532,40 @@ function rememberHistory(tenantId, list) {
   histNums[tenantId] = [...set];
   clearTimeout(histT); histT = setTimeout(() => { try { fs.writeFileSync(HIST_FILE, JSON.stringify(histNums)); } catch {} console.log(`[wa] tenant ${tenantId}: ${set.size} numbers from your old chats`); }, 3000);
 }
-const bookReady = (tenantId) => Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length >= 10;
+const bookFlag = tenantId => path.join(DATA_DIR, `wa-book-synced-${tenantId}.txt`);
+const bookReady = (tenantId) => fs.existsSync(bookFlag(tenantId)) || Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length >= 10;
 const isPlaceholder = (n) => /^زبون \d{4}$/.test(String(n || '').trim());
+// الاسم يلي البوت بيحطو للرقم: «<البادئة> 1234». البادئة بيختارها الزبون (الافتراضي «زبون»)
+const prefixOf = tenantId => { try { return String(getTenant(tenantId)?.settings?.contacts_prefix || 'زبون').replace(/[\d\n\r]/g, '').trim().slice(0, 24) || 'زبون'; } catch { return 'زبون'; } };
+const escRe = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const isPh = (tenantId, n) => isPlaceholder(n) || new RegExp('^' + escRe(prefixOf(tenantId)) + ' \\d{4}$').test(String(n || '').trim());
 // سجل Baileys بس للرسائل يلي إلها علاقة بمزامنة جهات الاتصال (بحد أقصى 400 سطر لكل تشغيل)
 let syncLogN = 0;
 const SYNC_KW = /sync|app.?state|snapshot|critical_unblock_low|missing key|blocked|patch/i;
-const syncLogFn = (lvl) => (o, m) => {
-  try {
-    const msg = typeof o === 'string' ? o : String(m || '');
-    let extra = '';
-    if (o && typeof o === 'object') extra = JSON.stringify(o, (k, v) => (k === 'error' && typeof v === 'string') ? v.split('\n').slice(0, 3).join(' | ') : (v && typeof v === 'object' && (v.type === 'Buffer' || v instanceof Uint8Array)) ? '[buf]' : v).slice(0, 700);
-    const mk = /failed to find key \\?"([A-Za-z0-9+/=]+)\\?"/.exec(extra + ' ' + msg); if (mk) onMissingKey(mk[1]); // دايماً، حتى لو السجل وقف
-    if (!SYNC_KW.test(msg + ' ' + extra) || /^(resyncing |synced |.*has more patches)/.test(msg)) return; // الرسائل الروتينية ما منكتبها
-    if (syncLogN >= 400) return;
-    syncLogN++; console.log(`[baileys:${lvl}] ${msg} ${extra}`);
-  } catch {}
-};
-const syncLogger = { level: 'info', trace() {}, debug() {}, info: syncLogFn('info'), warn: syncLogFn('warn'), error: syncLogFn('error'), fatal: syncLogFn('fatal'), child() { return syncLogger; } };
+// لكل مشترك سجل خاص (بيبيّن رقم المشترك)، وكشف المفتاح الناقص بيشتغل دايماً
+function makeSyncLogger(tenantId) {
+  const fn = (lvl) => (o, m) => {
+    try {
+      const msg = typeof o === 'string' ? o : String(m || '');
+      let extra = '';
+      if (o && typeof o === 'object') extra = JSON.stringify(o, (k, v) => (k === 'error' && typeof v === 'string') ? v.split('\n').slice(0, 3).join(' | ') : (v && typeof v === 'object' && (v.type === 'Buffer' || v instanceof Uint8Array)) ? '[buf]' : v).slice(0, 700);
+      const mk = /failed to find key \\?"([A-Za-z0-9+/=]+)\\?"/.exec(extra + ' ' + msg); if (mk) onMissingKey(tenantId, mk[1]); // دايماً، حتى لو السجل وقف
+      if (!SYNC_KW.test(msg + ' ' + extra) || /^(resyncing |synced |.*has more patches)/.test(msg)) return; // الرسائل الروتينية ما منكتبها
+      if (syncLogN >= 400) return;
+      syncLogN++; console.log(`[baileys:${lvl}] t${tenantId} ${msg} ${extra}`);
+    } catch {}
+  };
+  const L = { level: 'info', trace() {}, debug() {}, info: fn('info'), warn: fn('warn'), error: fn('error'), fatal: fn('fatal'), child() { return L; } };
+  return L;
+}
 // مفتاح مزامنة ناقص: البوت ما معو المفتاح يلي الموبايل عم يشفّر فيه جهات الاتصال، فكل حفظ من البوت بينبني على نسخة غلط والموبايل بيتجاهلو.
 // منطلب المفتاح من الموبايل متل ما بيعمل واتساب ويب (Baileys ما فيه هالشي)
 const keyAsked = new Map();
-function onMissingKey(keyId) {
-  const t = keyAsked.get(keyId) || 0; if (Date.now() - t < 10 * 60_000) return; keyAsked.set(keyId, Date.now());
-  console.error(`[wa] contacts-sync key ${keyId} is missing on the bot — asking your phone for it`);
-  setTimeout(() => requestAppStateKeys(KO_TENANT, [keyId]).catch(e => console.error('[wa] key request', e.message)), 3000);
+const retryAt = new Map();
+function onMissingKey(tenantId, keyId) {
+  const k = tenantId + ':' + keyId, t = keyAsked.get(k) || 0; if (Date.now() - t < 10 * 60_000) return; keyAsked.set(k, Date.now());
+  console.error(`[wa] tenant ${tenantId}: contacts-sync key ${keyId} is missing on the bot — asking the phone for it`);
+  setTimeout(() => requestAppStateKeys(tenantId, [keyId]).catch(e => console.error('[wa] key request', e.message)), 3000);
 }
 export async function requestAppStateKeys(tenantId, ids) {
   const s = sessions.get(tenantId), sock = s?.sock; if (!sock?.relayMessage || s.status !== 'open') return false;
@@ -617,7 +629,7 @@ async function auditContactsRun(tenantId, req) {
   console.log(`[wa] tenant ${tenantId}: audit — WhatsApp has ${cap.size} contacts (pn ${pnIdx}, lid ${lidIdx}); bot saved ${mine.length}, missing on WhatsApp ${missing.length}`);
 }
 export async function saveContact(tenantId, phone, name, force = false) {
-  if (Number(tenantId) !== KO_TENANT || !isActive()) return false;
+  if (!isActive() || !contactsOn(tenantId)) return false;
   const s = sessions.get(tenantId), num = String(phone || '').replace(/\D/g, '');
   if (!s?.sock?.addOrEditContact || s.status !== 'open' || num.length < 8) return false;
   if (!bookReady(tenantId)) return false; // ما وصلت أسماءك من الواتس لهلق: ما منلمس شي
@@ -629,10 +641,10 @@ export async function saveContact(tenantId, phone, name, force = false) {
   if (have) {
     // محفوظ عندك باسم: ما منغيّرو أبداً. بس إذا الاسم «زبون XXXX» ومنعرف الاسم الحقيقي، منبدّلو
     if (have === real) return true;
-    if (!isPlaceholder(have) && have !== saved[key]) return true; // اسم انت حاططو: ما منلمسو أبداً (بس منصلّح الأسماء يلي نحنا حطيناها)
-    if (isPlaceholder(have) && !real) return true;
+    if (!isPh(tenantId, have) && have !== saved[key]) return true; // اسم انت حاططو: ما منلمسو أبداً (بس منصلّح الأسماء يلي نحنا حطيناها)
+    if (isPh(tenantId, have) && !real) return true;
   }
-  const full = real || ('زبون ' + num.slice(-4));
+  const full = real || (prefixOf(tenantId) + ' ' + num.slice(-4));
   try {
     s.lastSyncErr = null;
     await s.sock.addOrEditContact(num + '@s.whatsapp.net', { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true });
@@ -647,9 +659,8 @@ export async function saveContact(tenantId, phone, name, force = false) {
 const bulk = new Map(); // tenantId -> Map(num -> name)
 let bulkTimer = null;
 export function queueContacts(tenantId, list) {
-  if (Number(tenantId) !== KO_TENANT) return 0;
-  const m = bulk.get(tenantId) || new Map(); let n = 0;
-  for (const { phone, name } of list) { const num = String(phone || '').replace(/\D/g, ''); const bk = bookName(tenantId, num); if (num.length >= 8 && !m.has(num) && (() => { const k = tenantId + ':' + num, sv = saved[k], rn = realNames[k], want = rn || ('زبون ' + num.slice(-4)); if (!bk) return true; if (isPlaceholder(bk)) return !!rn && bk !== rn; return bk === sv && sv !== want; })()) { m.set(num, name || ''); n++; } }
+  const m = bulk.get(tenantId) || new Map(); let n = 0; const pre = prefixOf(tenantId);
+  for (const { phone, name } of list) { const num = String(phone || '').replace(/\D/g, ''); const bk = bookName(tenantId, num); if (num.length >= 8 && !m.has(num) && (() => { const k = tenantId + ':' + num, sv = saved[k], rn = realNames[k], want = rn || (pre + ' ' + num.slice(-4)); if (!bk) return true; if (isPh(tenantId, bk)) return !!rn && bk !== rn; return bk === sv && sv !== want; })()) { m.set(num, name || ''); n++; } }
   bulk.set(tenantId, m);
   if (n) console.log(`[wa] tenant ${tenantId}: ${n} numbers queued to save in contacts`);
   if (!bulkTimer) bulkTimer = setInterval(async () => {
@@ -664,9 +675,16 @@ export function queueContacts(tenantId, list) {
   return n;
 }
 function queueAllKnown(tenantId) {
-  if (Number(tenantId) !== KO_TENANT) return;
+  const wantNew = hasService(tenantId, 'contacts_new'), wantOld = hasService(tenantId, 'contacts_old');
+  if (!wantNew && !wantOld) return;
   resolveLids(tenantId).catch(() => {});
+  if (!bookReady(tenantId)) { // ما وصل دفتر العناوين لهلق: منرجع نطلبو (مرة كل ساعة بالأكتر)
+    const s = sessions.get(tenantId), k = 'book:' + tenantId;
+    if (s?.sock && s.status === 'open' && Date.now() - (retryAt.get(k) || 0) > 3600_000) { retryAt.set(k, Date.now()); bookResync(tenantId, s.sock, { keys: s.sock.authState.keys }).catch(e => console.error('[wa] address book sync', e.message)); }
+    return;
+  }
   try {
+    if (Number(tenantId) === KO_TENANT) {
     // 1) الأسماء من الطلبات القديمة ومن يلي كتبو الزبون بالمحادثات («اسمي…»، «معك…»)
     let found = 0;
     for (const o of q.all("SELECT c.phone, o.customer_name n FROM orders o JOIN contacts c ON c.id = o.contact_id WHERE o.tenant_id = ? AND o.customer_name IS NOT NULL AND o.customer_name != ''", tenantId)) {
@@ -679,9 +697,11 @@ function queueAllKnown(tenantId) {
     for (const [k, arr] of Object.entries(histTexts)) { if (!k.startsWith(tenantId + ':')) continue; const ph = k.slice(String(tenantId).length + 1); for (const t of arr) if (learnName(tenantId, ph, t)) found++; }
     for (const m of q.all("SELECT c.phone, m.body FROM messages m JOIN contacts c ON c.id = m.contact_id WHERE m.tenant_id = ? AND m.direction = 'in' AND c.phone IS NOT NULL ORDER BY m.id", tenantId)) { if (learnName(tenantId, String(m.phone).replace(/\D/g, ''), m.body)) found++; }
     if (found) { try { fs.writeFileSync(NAMES_FILE, JSON.stringify(realNames)); } catch {} console.log(`[wa] tenant ${tenantId}: found ${found} real names in old chats/orders`); }
+    }
     // 2) كل الأرقام بالدور: بالاسم الحقيقي إذا منعرفو، وغير هيك «زبون XXXX». ويلي انحفظ «زبون» وهلق عرفنا اسمو بيتحدّث
-    const list = q.all('SELECT phone FROM contacts WHERE tenant_id = ? AND phone IS NOT NULL', tenantId).map(c => ({ phone: c.phone })).concat((histNums[tenantId] || []).map(p => ({ phone: p })));
-    if (!bookReady(tenantId)) { console.log(`[wa] tenant ${tenantId}: contact names from WhatsApp not received yet — not touching contacts`); return; }
+    // الجديدة: كل يلي راسل من وقت الربط. القديمة: محادثات الربط + النسخة الاحتياطية
+    const list = (wantNew ? q.all('SELECT phone FROM contacts WHERE tenant_id = ? AND phone IS NOT NULL', tenantId).map(c => ({ phone: c.phone })) : [])
+      .concat(wantOld ? (histNums[tenantId] || []).map(p => ({ phone: p })) : []);
     queueContacts(tenantId, list);
   } catch (e) { console.error('[wa] queue contacts', e.message); }
 }
@@ -738,3 +758,21 @@ export async function bootAll() {
   }
   if (n) console.log(`[wa] reconnecting ${n} WhatsApp session(s)`);
 }
+
+// ===== حفظ الأرقام كمنتج للمشتركين =====
+// أرقام هالمشترك: قديش انحفظ، قديش ناطر بالطابور، قديش رقم قديم وصل من الربط
+export function contactsStats(tenantId) {
+  const pre = tenantId + ':'; let savedN = 0;
+  for (const k in saved) if (k.startsWith(pre)) savedN++;
+  return { saved: savedN, pending: bulk.get(tenantId)?.size || 0, history: (histNums[tenantId] || []).length, book_ready: bookReady(tenantId), hidden_unknown: (histLids[tenantId] || []).length };
+}
+// أرقام من النسخة الاحتياطية (انفكّت على جهاز الزبون وإجت الأرقام بس): منضيفها للقديمة ومنحطها بالطابور
+export function importNumbers(tenantId, nums) {
+  const list = [...new Set((nums || []).map(x => String(x).replace(/\D/g, '')).filter(x => x.length >= 9 && x.length <= 15))].map(p => ({ phone: p }));
+  rememberHistory(tenantId, list);
+  const open = sessions.get(tenantId)?.status === 'open';
+  const queued = open && bookReady(tenantId) && hasService(tenantId, 'contacts_old') ? queueContacts(tenantId, list) : 0;
+  return { found: list.length, queued, waiting: !open };
+}
+// «احفظ الأرقام القديمة هلق» (بعد ما يشترك، بدون ما يستنى الدورة الجاية)
+export function queueHistoryNow(tenantId) { queueAllKnown(tenantId); return contactsStats(tenantId); }

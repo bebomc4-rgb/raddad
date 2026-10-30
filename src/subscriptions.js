@@ -3,6 +3,7 @@ import { q } from './db.js';
 import { getTenant } from './tenants.js';
 import { notifyOwner } from './agent.js';
 import { isActive } from './failover.js';
+import { checkServicesExpiring } from './services.js';
 
 const WARN_DAYS = 3;
 
@@ -17,6 +18,8 @@ export function checkExpiring() {
     const days = Math.max(1, Math.ceil((r.plan_expires_at - now) / 86400));
     notifyOwner(getTenant(r.id), `⏰ اشتراكك بينتهي بعد ${days} ${days === 1 ? 'يوم' : 'أيام'}. جدّد من صفحة الاشتراك حتى ما يوقف الوكيل عن الرد.`);
   }
+  // نفس الشي لاشتراكات حفظ الأرقام
+  checkServicesExpiring((tid, text) => notifyOwner(getTenant(tid), text));
 }
 
 export function startSubscriptionWorker() {

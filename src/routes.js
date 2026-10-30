@@ -21,6 +21,7 @@ import { parseExport, unzipTexts, buildPairs, savePairs, styleStats, clearExampl
 import { bumpUsage } from './db.js';
 import { aiAllowance } from './tenants.js';
 import { trialStatus, allowNewTrial } from './trial.js';
+import { grantService } from './services.js';
 
 export const router = createRouter();
 const r = router;
@@ -82,6 +83,7 @@ r.post('/api/auth/register', ctx => {
       JSON.stringify({ ...DEFAULT_KNOWLEDGE, business_name: clamp(business_name, 120).trim() }));
     const u = q.run('INSERT INTO users (tenant_id, email, name, pass_hash, role, is_super) VALUES (?, ?, ?, ?, ?, ?)',
       t.lastInsertRowid, em, clamp(name || '', 80), hashPassword(password), 'owner', isSuper);
+    if (ctx.body.bot_enabled === false && !isSuper) q.run('UPDATE tenants SET bot_enabled = 0 WHERE id = ?', t.lastInsertRowid); // بدو حفظ الأرقام بس: المجيب ما بيشتغل لحتى يفعّلو
     return Number(u.lastInsertRowid);
   });
   ctx.setCookie(createSession(userId));
@@ -1001,7 +1003,8 @@ r.post('/api/admin/payments/:id', ctx => {
   const approve = ctx.body.action === 'approve';
   tx(() => {
     q.run('UPDATE payment_requests SET status = ? WHERE id = ?', approve ? 'approved' : 'rejected', p.id);
-    if (approve) {
+    if (approve && p.service_id) grantService(p.tenant_id, p.service_id, p.months); // حفظ الأرقام: منتج منفصل
+    else if (approve) {
       const t = q.get('SELECT plan_id, plan_expires_at FROM tenants WHERE id = ?', p.tenant_id);
       const base = t.plan_id === p.plan_id ? Math.max(t.plan_expires_at || 0, Date.now() / 1000) : Date.now() / 1000;
       q.run('UPDATE tenants SET plan_id = ?, plan_expires_at = ? WHERE id = ?', p.plan_id, Math.floor(base + periodDays(p.months) * 86400), p.tenant_id);

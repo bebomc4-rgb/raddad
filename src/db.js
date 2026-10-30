@@ -258,6 +258,50 @@ const migrations = [
   `
   ALTER TABLE tenants ADD COLUMN slug TEXT;
   CREATE UNIQUE INDEX idx_tenants_slug ON tenants(slug);
+  `,
+  // 13 — منتجات منفصلة عن المجيب: حفظ كل رقم جديد (اشتراك بالمدة) وحفظ الأرقام القديمة (دفعة وحدة)
+  `
+  CREATE TABLE services (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'period',      -- period = اشتراك بالمدة | once = دفعة وحدة
+    description TEXT NOT NULL DEFAULT '',
+    features TEXT NOT NULL DEFAULT '[]',
+    currency TEXT NOT NULL DEFAULT 'USD',
+    is_public INTEGER NOT NULL DEFAULT 1,
+    sort INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE service_prices (
+    service_id TEXT NOT NULL,
+    months INTEGER NOT NULL,                  -- 0 = دفعة وحدة
+    price REAL NOT NULL,
+    PRIMARY KEY (service_id, months)
+  );
+  CREATE TABLE tenant_services (
+    tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    service_id TEXT NOT NULL,
+    expires_at INTEGER,                       -- NULL = للأبد (دفعة وحدة)
+    paused INTEGER NOT NULL DEFAULT 0,        -- الزبون وقّفها بإيدو
+    warned_for INTEGER,
+    activated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (tenant_id, service_id)
+  );
+  CREATE TABLE contact_imports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,                     -- link | backup
+    found INTEGER NOT NULL DEFAULT 0,
+    queued INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  ALTER TABLE payment_requests ADD COLUMN service_id TEXT;
+  INSERT INTO services (id, name, kind, description, features, sort) VALUES
+    ('contacts_new', 'حفظ كل رقم جديد', 'period', 'كل زبون بيراسلك أول مرة بينحفظ بجهات اتصالك بنفس اللحظة، بدون ما تعمل شي.',
+     '["بينحفظ أول ما يبعتلك","حتى لو تفاعل برمز أو إنت بعتّلو أول","حتى لو وصلت رسالتو والنت مقطوع","باسم مرتّب: زبون + آخر 4 أرقام"]', 1),
+    ('contacts_old', 'حفظ كل الأرقام القديمة', 'once', 'كل الأرقام يلي راسلتك من أول ما فتحت واتساب بتنحفظ بجهات اتصالك، بدفعة وحدة.',
+     '["أوتوماتيك وقت ربط الواتس","وكمان من النسخة الاحتياطية من سنين","الملف بيتفك على جهازك وما بينرفع","بدون تكرار ولا لمس للأسماء يلي حاططها إنت"]', 2);
+  INSERT INTO service_prices (service_id, months, price) VALUES
+    ('contacts_new', 1, 5), ('contacts_new', 3, 12), ('contacts_new', 6, 20), ('contacts_new', 12, 35), ('contacts_old', 0, 10);
   `
 ];
 
