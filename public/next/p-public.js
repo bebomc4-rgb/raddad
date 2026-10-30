@@ -1,5 +1,5 @@
 // الصفحات العامة: الرئيسية للزوار، الدخول، وإنشاء حساب
-import { state, api, html, ic, money, periodName, connectLive, fail, busy, n, str as toHTML } from './core.js';
+import { state, api, html, ic, money, periodName, connectLive, fail, busy, n, modal, str as toHTML } from './core.js';
 import { go, loadMe } from './app.js';
 
 const topbar = () => html`<header class="site-top">
@@ -57,16 +57,16 @@ export async function landing(view) {
         <div class="row between"><div class="ico lg ${p.cls}">${ic(p.icon)}</div>${p.extra || (p.premium ? html`<span class="pill gold plain">${ic('crown')} دفعة وحدة</span>` : '')}</div>
         <h3>${p.name}</h3><p class="muted">${p.desc}</p>
         <ul>${(p.feats || []).map(f => html`<li>${f}</li>`)}</ul>
-        <div class="row between" style="margin-top:auto"><div>${p.price}</div><a class="btn ${p.premium ? 'btn-gold' : 'btn-primary'}" href="#/register">اشترك</a></div>
+        <div class="row between" style="margin-top:auto"><div>${p.price}</div><button class="btn ${p.premium ? 'btn-gold' : 'btn-primary'}" data-sub="${p.id}">اشترك</button></div>
       </div>`)}</div>
     </section>
 
     <section class="section" id="how">
       <div class="section-h"><h2>بتبلّش بأقل من دقيقتين</h2><p>بدون برامج ولا تعقيد. كلشي من موبايلك أو كمبيوترك.</p></div>
       <div class="grid g3 steps3">
-        <div class="card"><h3>اعمل حساب</h3><p class="muted" style="margin-top:6px">اسم متجرك وإيميلك وكلمة سر. خلص.</p></div>
+        <div class="card"><h3>اعمل حساب</h3><p class="muted" style="margin-top:6px">اسمك واسم متجرك ورقم موبايلك وكلمة سر. خلص.</p></div>
         <div class="card"><h3>اربط واتسابك</h3><p class="muted" style="margin-top:6px">امسح الكود من واتساب ← الأجهزة المرتبطة، متل واتساب ويب بالزبط.</p></div>
-        <div class="card"><h3>اختار الخدمة وادفع</h3><p class="muted" style="margin-top:6px">بشام كاش أو كاش باليد بقدسيا، ومنفعّلك فوراً بعد التأكيد.</p></div>
+        <div class="card"><h3>اختار الخدمة وادفع</h3><p class="muted" style="margin-top:6px">بشام كاش أو كاش بمركزنا بقدسيا، ومنفعّلك بعد التأكيد.</p></div>
       </div>
     </section>
 
@@ -84,7 +84,7 @@ export async function landing(view) {
         <details class="faq"><summary>إذا اشتركت بحفظ الأرقام بس، المجيب رح يرد على زباينِي؟</summary><p>لا. كل خدمة لحالها. المجيب ما بيرد على حدا إلا إذا شغّلتو إنت بإيدك.</p></details>
         <details class="faq"><summary>كيف بتجيبو أرقامي القديمة؟ وبياناتي بأمان؟</summary><p>من نسختك الاحتياطية: بتختار ملف النسخة وبتكتب مفتاحها، والملف بينقرا على جهازك إنت، وما بيوصلنا منو غير الأرقام. بعد الشرا معك 24 ساعة لترفعها.</p></details>
         <details class="faq"><summary>شو الاسم يلي بينحفظ فيه الرقم؟</summary><p>«زبون» وآخر 4 أرقام، مثلاً «زبون 4821»، وفيك تغيّر كلمة «زبون». والأسماء يلي إنت حاططها من قبل ما منلمسها أبداً.</p></details>
-        <details class="faq"><summary>كيف بدفع؟</summary><p>شام كاش (بترفع صورة الإيصال من الموقع) أو كاش باليد بقدسيا. منأكّد الدفعة ومنفعّلك بأسرع وقت.</p></details>
+        <details class="faq"><summary>كيف بدفع؟</summary><p>شام كاش (بتحوّل وبتبعت صورة التحويل على واتساب 0938986875)، أو كاش بمركزنا: دمشق - قدسيا - خلف البلدية. منأكّد الدفعة ومنفعّلك بأسرع وقت.</p></details>
         <details class="faq"><summary>في شي لازم أعرفو قبل؟</summary><p>الربط غير رسمي، متل كل البرامج يلي بتربط واتساب ويب. واتساب ممكن يقيّد الأرقام يلي بتبعت رسائل مزعجة، لهيك المجيب بيرد على يلي بيراسلك بس، وما بيبعت رسائل جماعية.</p></details>
       </div>
     </section>
@@ -100,7 +100,7 @@ export async function landing(view) {
           <div class="row between"><h3>${p.name}</h3>${i === 1 ? html`<span class="pill gold plain">الأكتر طلباً</span>` : ''}</div>
           <div><span class="price">${money(p.prices?.[months], p.currency)}</span> <small class="muted">/ ${periodName(months)}</small></div>
           <ul>${(p.features?.length ? p.features : ['ردود بلا حدود', `حتى ${n(p.max_products)} منتج`]).slice(0, 6).map(f => html`<li>${f}</li>`)}</ul>
-          <a class="btn btn-primary btn-block" href="#/register" style="margin-top:auto">اشترك</a></div>`)}</div>`);
+          <button class="btn btn-primary btn-block" data-buy="plan:${p.id}:${months}" style="margin-top:auto">اشترك</button></div>`)}</div>`);
     } else {
       const s = tab === 'contacts_new' ? sNew : sOld;
       const entries = Object.entries(s.prices || {}).filter(([, v]) => v != null);
@@ -108,10 +108,29 @@ export async function landing(view) {
         <h3>${s.kind === 'once' ? 'دفعة وحدة' : periodName(Number(m))}</h3><div><span class="price">${money(v, s.currency)}</span></div>
         ${s.kind === 'period' && Number(m) > 1 && s.prices[1] ? html`<span class="tiny muted">يعني ${money(v / Number(m), s.currency)} بالشهر</span>` : ''}
         <ul>${(s.features || []).slice(0, 4).map(f => html`<li>${f}</li>`)}</ul>
-        <a class="btn ${s.kind === 'once' ? 'btn-gold' : 'btn-primary'} btn-block" href="#/register" style="margin-top:auto">اشترك</a></div>`)}</div>`);
+        <button class="btn ${s.kind === 'once' ? 'btn-gold' : 'btn-primary'} btn-block" data-buy="service:${s.id}:${m}" style="margin-top:auto">اشترك</button></div>`)}</div>`);
     }
   };
   draw();
+  // «اشترك»: إذا داخل بحسابو منفتحلو الدفع، وإذا لا منعملو حساب ومنكمّل للدفع
+  const buy = key => {
+    if (state.me) { import('./p-billing.js').then(m => { const [kind, id, mm] = key.split(':'); m.checkout({ kind, id, months: Number(mm) }); }); return; }
+    try { localStorage.setItem('kf-buy', key); } catch {}
+    go('/register');
+  };
+  view.on('click', '[data-buy]', (e, b) => buy(b.dataset.buy));
+  view.on('click', '[data-sub]', (e, b) => {
+    const pid = b.dataset.sub;
+    let opts, name, cur;
+    if (pid === 'responder') { const p = paidPlans[0]; if (!p) return; name = 'المجيب الذكي'; cur = p.currency; opts = Object.entries(p.prices || {}).filter(([m, v]) => Number(m) > 0 && v).map(([m, v]) => ({ key: `plan:${p.id}:${m}`, m: Number(m), v, per: p.prices[1] })); }
+    else { const s = svc(pid); name = s.name; cur = s.currency; opts = Object.entries(s.prices || {}).filter(([, v]) => v != null).map(([m, v]) => ({ key: `service:${pid}:${m}`, m: Number(m), v, per: s.prices[1] })); }
+    if (opts.length === 1) return buy(opts[0].key);
+    modal({
+      title: `اشترك بـ «${name}»`,
+      body: html`<div class="stack-sm"><p class="muted">اختار المدة. كل ما طوّلت، كل ما وفّرت.</p><div class="choices period-pick">${opts.map(o => html`<button type="button" class="choice" data-pick="${o.key}"><div class="t">${o.m ? periodName(o.m) : 'دفعة وحدة'}</div><div class="price" style="font-size:24px">${money(o.v, cur)}</div>${o.m > 1 && o.per ? html`<div class="tiny muted">يعني ${money(Math.round(o.v / o.m * 100) / 100, cur)} بالشهر</div>` : ''}</button>`)}</div></div>`,
+      onMount(m, close) { m.querySelectorAll('[data-pick]').forEach(x => x.onclick = () => { close(); buy(x.dataset.pick); }); }
+    });
+  });
   view.on('click', '[data-ptabs] button', (e, b) => { tab = b.dataset.p; view.el.querySelectorAll('[data-ptabs] button').forEach(x => x.classList.toggle('on', x === b)); draw(); });
   view.on('click', '[data-months] button', (e, b) => { months = Number(b.dataset.m); draw(); });
   view.on('click', '[data-scroll]', (e, a) => { e.preventDefault(); document.getElementById(a.dataset.scroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
@@ -172,7 +191,9 @@ export async function register(view) {
       try {
         if (f.password.value !== f.password2.value) { fail(new Error('كلمة السر والتأكيد مو متل بعض')); f.password2.focus(); return; }
         await api('/api/v2/auth/register', { method: 'POST', body: { name: f.name.value, business_name: f.business_name.value, phone: f.phone.value, password: f.password.value, password2: f.password2.value } });
-        await loadMe(); connectLive(); go('/whatsapp?welcome=1', true);
+        await loadMe(); connectLive();
+        let pend = null; try { pend = localStorage.getItem('kf-buy'); localStorage.removeItem('kf-buy'); } catch {}
+        go(pend ? '/billing?buy=' + pend : '/whatsapp?welcome=1', true);
       } catch (err) { fail(err); }
     });
   });
