@@ -34,6 +34,12 @@ export function hasService(tid, sid) {
   return live(r);
 }
 export const contactsOn = tid => hasService(tid, 'contacts_new') || hasService(tid, 'contacts_old');
+// «الأرقام القديمة» دفعة وحدة: بس الأرقام يلي راسلت قبل وقت التفعيل. يلي إجا بعدو «جديد» وبدو اشتراك «كل رقم جديد»
+export function oldCutoff(tid) {
+  if (isSuperTenant(tid)) return Infinity;
+  const r = row(tid, 'contacts_old');
+  return r ? Number(r.activated_at) || 0 : 0;
+}
 
 // حالة كل الخدمات لهالزبون (للوحة)
 export function servicesFor(tid) {
@@ -59,8 +65,9 @@ export function grantService(tid, sid, months = 0, days = 0) {
     exp = base + (Number(days) > 0 ? Number(days) : daysFor(Number(months))) * 86400; // أيام = تجربة يعطيها المدير
   }
   q.run(`INSERT INTO tenant_services (tenant_id, service_id, expires_at, paused, activated_at) VALUES (?, ?, ?, 0, ?)
-         ON CONFLICT(tenant_id, service_id) DO UPDATE SET expires_at = excluded.expires_at, paused = 0, warned_for = NULL`,
-    Number(tid), sid, exp, now());
+         ON CONFLICT(tenant_id, service_id) DO UPDATE SET expires_at = excluded.expires_at, paused = 0, warned_for = NULL,
+           activated_at = CASE WHEN ? = 'once' THEN excluded.activated_at ELSE tenant_services.activated_at END`, // دفعة جديدة للقديمة = تاريخ قطع جديد
+    Number(tid), sid, exp, now(), s.kind);
   return row(tid, sid);
 }
 export function revokeService(tid, sid) { q.run('DELETE FROM tenant_services WHERE tenant_id = ? AND service_id = ?', Number(tid), sid); }

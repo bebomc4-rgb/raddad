@@ -8,7 +8,7 @@ import { phoneFromJid } from '../text.js';
 import { getTenant } from '../tenants.js';
 import { trialStatus } from '../trial.js';
 import { isActive } from '../failover.js';
-import { hasService, contactsOn } from '../services.js';
+import { hasService, contactsOn, oldCutoff } from '../services.js';
 import * as M from './mirror.js';
 
 const sessions = new Map(); // tenantId -> state
@@ -191,18 +191,19 @@ export async function start(tenantId, { pairPhone = null } = {}) {
       const lidPn = async (lid) => { try { const pn = lidMap?.getPNForLID ? await lidMap.getPNForLID(lid) : null; return pn && /@s\.whatsapp\.net$/.test(pn) ? phoneFromJid(pn) : ''; } catch { return ''; } };
       const phoneFor = async (...ids) => { const p = pnOf(...ids); if (p) return p; const lid = ids.find(x => /@lid$/.test(String(x || ''))); if (!lid) return ''; const r = await lidPn(lid); if (!r) rememberLid(tenantId, lid); return r; };
       let lidHits = 0;
-      for (const c of [...(chats || []), ...(contacts || [])]) { if (/@g\.us$|@broadcast$|@newsletter$/.test(c.id || '')) continue; const p = await phoneFor(c.id, c.pnJid, c.phoneNumber, c.lidJid); if (p) { list.push({ phone: p }); if (/@lid$/.test(c.id || '')) lidHits++; } }
+      const tsOf = v => Number(v?.toNumber?.() ?? v?.low ?? v ?? 0);
+      for (const c of [...(chats || []), ...(contacts || [])]) { if (/@g\.us$|@broadcast$|@newsletter$/.test(c.id || '')) continue; const p = await phoneFor(c.id, c.pnJid, c.phoneNumber, c.lidJid); if (p) { list.push({ phone: p }); seen(tenantId, p, tsOf(c.conversationTimestamp || c.lastMessageRecvTimestamp)); if (/@lid$/.test(c.id || '')) lidHits++; } }
       for (const m of messages || []) {
         const rj = m.key?.remoteJid || ''; if (/@g\.us$|@broadcast$|@newsletter$|^status@/.test(rj)) continue;
         const p = await phoneFor(rj, m.key?.remoteJidAlt, m.key?.senderPn); if (!p) continue;
-        list.push({ phone: p });
+        list.push({ phone: p }); seen(tenantId, p, tsOf(m.messageTimestamp));
         if (m.key?.fromMe) continue;
         const t0 = m.message?.conversation || m.message?.extendedTextMessage?.text || m.message?.imageMessage?.caption || '';
         if (t0) { keepText(tenantId, p, t0); learnName(tenantId, p, t0); }
       }
       if (lidHits) console.log(`[wa] tenant ${tenantId}: ${lidHits} archived/hidden chats matched to numbers`);
       rememberHistory(tenantId, list);
-      if (bookReady(tenantId) && hasService(tenantId, 'contacts_old')) queueContacts(tenantId, list); // الأرقام القديمة: بس لمشتركين «حفظ الأرقام القديمة»
+      if (bookReady(tenantId) && hasService(tenantId, 'contacts_old')) queueContacts(tenantId, list.filter(x => isOld(tenantId, x.phone))); // الأرقام القديمة: بس لمشتركين «حفظ الأرقام القديمة»، وبس يلي راسل قبل وقت التفعيل
     } catch (e) { console.error('[wa] history contacts', e.message); }
     try {
       if (!messages?.length) return;
@@ -247,7 +248,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
             try { const pn = await sock.signalRepository?.lidMapping?.getPNForLID?.(jid); if (pn && /@s\.whatsapp\.net$/.test(pn)) ph = phoneFromJid(pn); } catch {}
             if (!ph) rememberLid(tenantId, jid);
           }
-          if (ph) found.push({ phone: ph });
+          if (ph) { found.push({ phone: ph }); seen(tenantId, ph, Number(m.messageTimestamp?.toNumber?.() ?? m.messageTimestamp ?? 0) || Math.floor(Date.now() / 1000)); }
         } catch {}
       }
       if (found.length && hasService(tenantId, 'contacts_new')) queueContacts(tenantId, found);
@@ -263,6 +264,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
         let { text, mediaNote, quote } = extract(m.message, !m.key.fromMe);
         const alt = m.key.remoteJidAlt || m.key.senderPn || m.key.participantPn || null;
         let phone = phoneFromJid(jid.endsWith('@s.whatsapp.net') ? jid : alt || '');
+        if (phone) seen(tenantId, phone, Number(m.messageTimestamp?.toNumber?.() ?? m.messageTimestamp ?? 0) || Math.floor(Date.now() / 1000));
         // رسالة جاية بمعرّف @lid وما وصل معا رقم: منحاول نحوّلو لرقم هون، وإذا ما قدرنا منحطّو بقائمة الانتظار لـ resolveLids
         if (!phone && /@lid$/.test(jid)) {
           try { const pn = await sock.signalRepository?.lidMapping?.getPNForLID?.(jid); if (pn && /@s\.whatsapp\.net$/.test(pn)) phone = phoneFromJid(pn); } catch {}
@@ -498,7 +500,7 @@ async function resolveLids(tenantId) {
   const left = [], found = [];
   for (const lid of a) { let pn = ''; try { pn = await map.getPNForLID(lid); } catch {} if (pn && /@s\.whatsapp\.net$/.test(pn)) found.push({ phone: phoneFromJid(pn) }); else left.push(lid); }
   histLids[tenantId] = left; try { fs.writeFileSync(LIDS_FILE, JSON.stringify(histLids)); } catch {}
-  if (found.length) { rememberHistory(tenantId, found); if (bookReady(tenantId) && contactsOn(tenantId)) queueContacts(tenantId, found); }
+  if (found.length) { rememberHistory(tenantId, found); if (bookReady(tenantId) && contactsOn(tenantId)) queueContacts(tenantId, hasService(tenantId, 'contacts_new') ? found : found.filter(x => isOld(tenantId, x.phone))); }
   console.log(`[wa] tenant ${tenantId}: hidden chats — ${found.length} matched now, ${left.length} still unknown`);
   return found.length;
 }
@@ -721,7 +723,7 @@ function queueAllKnown(tenantId) {
     // 2) كل الأرقام بالدور: بالاسم الحقيقي إذا منعرفو، وغير هيك «زبون XXXX». ويلي انحفظ «زبون» وهلق عرفنا اسمو بيتحدّث
     // الجديدة: كل يلي راسل من وقت الربط. القديمة: محادثات الربط + النسخة الاحتياطية
     const list = (wantNew ? q.all('SELECT phone FROM contacts WHERE tenant_id = ? AND phone IS NOT NULL', tenantId).map(c => ({ phone: c.phone })) : [])
-      .concat(wantOld ? (histNums[tenantId] || []).map(p => ({ phone: p })) : []);
+      .concat(wantOld ? (histNums[tenantId] || []).filter(p => isOld(tenantId, p)).map(p => ({ phone: p })) : []);
     queueContacts(tenantId, list);
   } catch (e) { console.error('[wa] queue contacts', e.message); }
 }
@@ -788,10 +790,16 @@ export function contactsStats(tenantId) {
 }
 // أرقام من النسخة الاحتياطية (انفكّت على جهاز الزبون وإجت الأرقام بس): منضيفها للقديمة ومنحطها بالطابور
 export function importNumbers(tenantId, nums) {
-  const list = [...new Set((nums || []).map(x => String(x).replace(/\D/g, '')).filter(x => x.length >= 9 && x.length <= 15))].map(p => ({ phone: p }));
+  const map = new Map();
+  for (const x of nums || []) {
+    const [n, t] = Array.isArray(x) ? x : [x, 0];
+    const p = String(n || '').replace(/\D/g, ''); if (p.length < 9 || p.length > 15) continue;
+    map.set(p, t); if (t) seen(tenantId, p, t);
+  }
+  const list = [...map.keys()].map(p => ({ phone: p }));
   rememberHistory(tenantId, list);
   const open = sessions.get(tenantId)?.status === 'open';
-  const queued = open && bookReady(tenantId) && hasService(tenantId, 'contacts_old') ? queueContacts(tenantId, list) : 0;
+  const queued = open && bookReady(tenantId) && hasService(tenantId, 'contacts_old') ? queueContacts(tenantId, list.filter(x => isOld(tenantId, x.phone))) : 0;
   return { found: list.length, queued, waiting: !open };
 }
 // «احفظ الأرقام القديمة هلق» (بعد ما يشترك، بدون ما يستنى الدورة الجاية)
@@ -897,3 +905,25 @@ export async function mirrorRead(tenantId, jid) {
   const last = M.messages(tenantId, jid, { limit: 1 }).filter(m => !m.from_me);
   if (last.length) s.sock.readMessages([{ remoteJid: jid, id: last[0].id, fromMe: false, ...(jid.endsWith('@g.us') && last[0].sender ? { participant: last[0].sender } : {}) }]).catch(() => {});
 }
+
+// ===== أول مرة شفنا كل رقم (لتمييز القديم عن الجديد) =====
+const FIRST_FILE = path.join(DATA_DIR, 'wa-first-seen.json');
+let firstSeen = {}; try { firstSeen = JSON.parse(fs.readFileSync(FIRST_FILE, 'utf8')); } catch {}
+let firstT = null;
+function seen(tenantId, phone, ts) {
+  phone = String(phone || '').replace(/\D/g, ''); ts = Number(ts) || 0;
+  if (ts > 1e12) ts = Math.floor(ts / 1000);
+  if (phone.length < 8 || ts < 1e9) return;
+  const m = firstSeen[tenantId] ||= {};
+  if (m[phone] && m[phone] <= ts) return;
+  m[phone] = ts;
+  clearTimeout(firstT); firstT = setTimeout(() => { try { fs.writeFileSync(FIRST_FILE, JSON.stringify(firstSeen)); } catch {} }, 5000);
+}
+// الرقم «قديم» إذا في محادثة معو قبل وقت تفعيل «الأرقام القديمة». يلي ما منعرف تاريخو ما بينحسب قديم
+function isOld(tenantId, phone) {
+  const cut = oldCutoff(tenantId);
+  if (cut === Infinity) return true;
+  const t = firstSeen[tenantId]?.[String(phone || '').replace(/\D/g, '')];
+  return !!t && t < cut;
+}
+export const isOldNumber = isOld;

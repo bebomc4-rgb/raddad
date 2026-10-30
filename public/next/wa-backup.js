@@ -255,11 +255,12 @@ export async function readWhatsAppBackup(file, keyInput, { onProgress, signal } 
   const maxPage = Math.max(...leafOf.keys());
 
   // الجولة 2: منقرا صفحات الجداول التلاتة بس، ومنوقف بعد آخر صفحة منحتاجها
-  const jids = new Map(), chats = [], lidToPn = new Map();
+  const jids = new Map(), chats = [], lidToPn = new Map(), chatTs = new Map();
   const ci = name => { const cols = schema.get(name)?.cols || []; return n => cols.findIndex(c => c.name.toLowerCase() === n); };
   const J = ci('jid'), C = ci('chat'), JM = ci('jid_map');
   const jUser = J('user') >= 0 ? J('user') : 1, jServer = J('server') >= 0 ? J('server') : 2;
   const cJid = C('jid_row_id') >= 0 ? C('jid_row_id') : 1;
+  const cTs = ['created_timestamp', 'sort_timestamp'].map(C).filter(i => i >= 0); // تاريخ المحادثة (لنعرف القديم من الجديد)
   const mLid = JM('lid_row_id') >= 0 ? JM('lid_row_id') : 0, mJid = JM('jid_row_id') >= 0 ? JM('jid_row_id') : 1;
   const ipk = name => (schema.get(name)?.cols || []).findIndex(c => c.ipk);
   const val = (name, row, rowid, idx) => (idx === ipk(name) && row[idx] == null ? rowid : row[idx]);
@@ -270,7 +271,7 @@ export async function readWhatsAppBackup(file, keyInput, { onProgress, signal } 
       if (name && pageType(no, pg) === 0x0D) {
         for (const [rowid, r] of leafRows(no, pg, usable)) {
           if (name === 'jid') jids.set(rowid, [r[jUser], r[jServer]]);
-          else if (name === 'chat') { const j = val('chat', r, rowid, cJid); if (Number.isInteger(j)) chats.push(j); }
+          else if (name === 'chat') { const j = val('chat', r, rowid, cJid); if (Number.isInteger(j)) { chats.push(j); const ts = cTs.map(i => Number(r[i]) || 0).filter(v => v > 1e9); if (ts.length) chatTs.set(j, Math.min(...ts)); } }
           else { const l = val('jid_map', r, rowid, mLid), j = val('jid_map', r, rowid, mJid); if (Number.isInteger(l) && Number.isInteger(j)) lidToPn.set(l, j); }
         }
       }
@@ -278,7 +279,7 @@ export async function readWhatsAppBackup(file, keyInput, { onProgress, signal } 
     }
   });
 
-  const out = new Set(); let hidden = 0, people = 0;
+  const out = new Set(), dated = new Map(); let hidden = 0, people = 0;
   for (const jr of chats) {
     const j = jids.get(jr); if (!j) continue;
     let [user, server] = j;
@@ -287,6 +288,7 @@ export async function readWhatsAppBackup(file, keyInput, { onProgress, signal } 
     const num = String(user || '').replace(/\D/g, '');
     if (num.length < 8 || num.length > 15) continue;
     people++; out.add(num);
+    const t = chatTs.get(jr); if (t) { const s = t > 1e12 ? Math.floor(t / 1000) : t; if (!dated.has(num) || s < dated.get(num)) dated.set(num, s); }
   }
-  return { numbers: [...out], chats: chats.length, people, hidden };
+  return { numbers: [...out], dated: [...out].map(n => [n, dated.get(n) || 0]), chats: chats.length, people, hidden };
 }

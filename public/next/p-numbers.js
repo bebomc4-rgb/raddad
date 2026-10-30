@@ -193,7 +193,7 @@ export async function backup(view) {
   });
   view.on('click', '[data-cancel]', () => ctrl?.abort());
   view.on('click', '[data-send]', (e, b) => busy(b, async () => {
-    try { sent = await api('/api/csync/import', { method: 'POST', body: { numbers: result.numbers } }); refreshMe(); draw(); } catch (err2) { fail(err2); }
+    try { sent = await api('/api/csync/import', { method: 'POST', body: { numbers: result.dated || result.numbers } }); refreshMe(); draw(); } catch (err2) { fail(err2); }
   }));
   view.on('click', '[data-buy-old]', () => checkout({ kind: 'service', id: 'contacts_old', months: 0, onDone: () => go('/billing') }));
   view.cleanup(() => ctrl?.abort());
