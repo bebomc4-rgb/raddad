@@ -34,11 +34,30 @@ export function startFailover(onChange) {
   tick(); setInterval(tick, 30_000);
 }
 
-// على الكمبيوتر: إذا لقى الرابط العام موجّه عالموبايل (يعني الكمبيوتر رجع)، بيرجّعو لعندو
+// في نت؟ (منسأل Cloudflare نفسها، لأنو الرابط العام كلو عليها)
+async function online() {
+  try { await fetch('https://www.cloudflare.com/cdn-cgi/trace?t=' + Date.now(), { signal: AbortSignal.timeout(10000) }); return true; }
+  catch { return false; }
+}
+
+// على الكمبيوتر، كل دقيقتين:
+// - إذا لقى الرابط العام موجّه عالموبايل (يعني الكمبيوتر رجع)، بيرجّعو لعندو
+// - إذا الرابط ما عم يجاوب أبداً والنت شغّال (النفق المؤقت مات، بيصير بعد ما ينقطع النت ويرجع
+//   وبيطلع خطأ 1016 أو 530)، مرتين ورا بعض → بيعمل نفق جديد وبيحدّث الرابط لحالو
 export function startPrimaryWatch(republish) {
   if (STANDBY) return;
+  let dead = 0;
   setInterval(async () => {
     const who = await whoIsLive();
-    if (who && who !== 'pc') { console.log('[failover] the public link points to the backup — taking it back'); republish(); }
+    if (who) {
+      dead = 0;
+      if (who !== 'pc') { console.log('[failover] the public link points to the backup — taking it back'); republish(); }
+      return;
+    }
+    if (!linkUrl() || !(await online())) return;
+    if (++dead < 2) return;
+    dead = 0;
+    console.log('[failover] the public link is not answering (tunnel died) — starting a new tunnel');
+    republish();
   }, 120_000);
 }

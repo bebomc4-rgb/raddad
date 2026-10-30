@@ -95,15 +95,40 @@ async function publishPages(token, acc, name, target) {
   return 'https://' + (proj.subdomain || `${name}.pages.dev`);
 }
 
+// على ويندوز: لما السيرفر يعيد التشغيل لحالو، cloudflared القديم بيضل شغّال يتيم (نفق ما حدا عم يستعملو).
+// أول مرة بهالتشغيلة منسكّر النسخ القديمة تبعنا (بس يلي من مجلد bin تبع ردّاد) قبل ما نشغّل وحدة جديدة.
+let sweep = null;
+function sweepOld() {
+  if (!WIN) return Promise.resolve();
+  return sweep ||= new Promise(done => {
+    try {
+      const cmd = `Get-Process cloudflared -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '${BIN.replace(/'/g, "''")}' } | Stop-Process -Force -ErrorAction SilentlyContinue`;
+      const p = spawn('powershell', ['-NoProfile', '-Command', cmd], { windowsHide: true });
+      const t = setTimeout(() => { try { p.kill(); } catch {} done(); }, 20000);
+      p.on('exit', () => { clearTimeout(t); done(); });
+      p.on('error', () => { clearTimeout(t); done(); });
+    } catch { done(); }
+  });
+}
+
 export async function startTunnel(port) {
   const c = cfg();
   if (!c.enabled) { status.state = 'off'; return; }
   try { await ensureBinary(); } catch (e) { status.state = 'error'; status.error = e.message; return; }
+  await sweepOld();
   stopTunnel();
   status.state = 'starting'; status.error = null;
-  const me = child = spawn(BIN, ['tunnel', '--no-autoupdate', '--url', `http://localhost:${port}`], { windowsHide: true });
+  // http2 (TCP) بدل QUIC (UDP): نت سوريا أحياناً بيسكّر UDP، فالنفق بيضل يحاول QUIC وما بيتصل أبداً (خطأ 1033)
+  const proto = ['http2', 'quic', 'auto'].includes(c.protocol) ? c.protocol : 'http2';
+  const me = child = spawn(BIN, ['tunnel', '--no-autoupdate', '--protocol', proto, '--url', `http://localhost:${port}`], { windowsHide: true });
+  // منسجّل أخطاء cloudflared وإيمت اتصل (أول 40 سطر بس) مشان نعرف ليش النفق ما عم يشتغل إذا علّق
+  let logged = 0;
   const onData = async buf => {
-    const m = String(buf).match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+    const text = String(buf);
+    for (const line of text.split(/\r?\n/)) {
+      if (logged < 40 && /\b(ERR|WRN)\b|Registered tunnel connection|Unauthorized/i.test(line)) { logged++; console.log('[cloudflared]', line.replace(/^\S+Z\s+/, '').slice(0, 240)); }
+    }
+    const m = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
     if (m && m[0] !== status.target && child === me) {
       status.target = m[0]; status.state = 'publishing';
       try { await publish(m[0]); status.state = 'on'; } catch (e) { status.state = 'error'; status.error = e.message; console.error('[link]', e.message); }

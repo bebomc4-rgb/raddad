@@ -138,8 +138,9 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/next') { res.writeHead(301, { Location: '/next/' + (url.search || '') }); return res.end(); }
     if (pathname.startsWith('/next/')) {
       const NEXT = path.join(PUBLIC, 'next');
+      // رقم النسخة على app.css بس: الصفحات بتستورد './app.js' بلا رقم، ولو حطّينا رقم على app.js بيتحمّل مرتين (نسختين شغّالين سوا)
       return serveFile(res, path.join(NEXT, 'index.html'), {
-        transform: html => html.replace(/(href|src)="\/next\/([\w./-]+\.(?:css|js))"/g, (m, a, f) => `${a}="/next/${f}?v=${fileVersion(path.join(NEXT, f))}"`)
+        transform: html => html.replace(/href="\/next\/([\w./-]+\.css)"/g, (m, f) => `href="/next/${f}?v=${fileVersion(path.join(NEXT, f))}"`)
       });
     }
     // الصفحة الرئيسية: منحط رقم نسخة على app.js و app.css
