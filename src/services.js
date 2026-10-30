@@ -49,14 +49,14 @@ export function servicesFor(tid) {
 }
 
 // تفعيل/تمديد: months = 0 → للأبد (دفعة وحدة)
-export function grantService(tid, sid, months = 0) {
+export function grantService(tid, sid, months = 0, days = 0) {
   const s = q.get('SELECT kind FROM services WHERE id = ?', sid);
   if (!s) throw new Error('الخدمة غير موجودة');
   const r = row(tid, sid);
   let exp = null;
-  if (s.kind === 'period' && Number(months) > 0) {
+  if (s.kind === 'period' && (Number(months) > 0 || Number(days) > 0)) {
     const base = r && r.expires_at && r.expires_at > now() ? r.expires_at : now();
-    exp = base + daysFor(Number(months)) * 86400;
+    exp = base + (Number(days) > 0 ? Number(days) : daysFor(Number(months))) * 86400; // أيام = تجربة يعطيها المدير
   }
   q.run(`INSERT INTO tenant_services (tenant_id, service_id, expires_at, paused, activated_at) VALUES (?, ?, ?, 0, ?)
          ON CONFLICT(tenant_id, service_id) DO UPDATE SET expires_at = excluded.expires_at, paused = 0, warned_for = NULL`,

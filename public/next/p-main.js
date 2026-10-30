@@ -15,6 +15,7 @@ export function servicePill(s) {
   return html`<span class="pill ok">شغّال</span>`;
 }
 export function responderPill(r) {
+  if (!r.unlocked) return html`<span class="pill plain">${ic('lock')} مقفول</span>`;
   if (!r.enabled) return html`<span class="pill plain">مطفي</span>`;
   if (r.replying) return r.paid ? html`<span class="pill ok">شغّال</span>` : html`<span class="pill info">تجربة مجانية</span>`;
   if (r.expired) return html`<span class="pill bad">الاشتراك خلص</span>`;
@@ -83,7 +84,7 @@ async function paintHome(view) {
       <div class="card">
         <div class="card-h"><h3><span class="ico gold">${ic('card')}</span> اشتراكاتي</h3><a class="linkish small" href="#/billing">إدارة</a></div>
         <div class="list">
-          ${[['المجيب الذكي', r.paid ? `${r.plan_name} — لـ ${date(r.expires_at)}` : r.enabled ? (trialLeft ? 'تجربة مجانية' : 'غير مشترك') : 'مطفي', r.paid],
+          ${[['المجيب الذكي', r.paid ? `${r.plan_name} — لـ ${date(r.expires_at)}` : !r.unlocked ? 'مقفول' : r.enabled ? (trialLeft ? 'تجربة مجانية' : 'غير مشترك') : 'مطفي', r.paid],
              ['حفظ كل رقم جديد', sv.contacts_new.owned ? (sv.contacts_new.forever ? 'شغّال دايماً' : `لـ ${date(sv.contacts_new.expires_at)} (${left(sv.contacts_new.expires_at)})`) : 'غير مشترك', sv.contacts_new.owned],
              ['حفظ كل الأرقام القديمة', sv.contacts_old.owned ? 'مدفوعة ✓' : 'غير مشترك', sv.contacts_old.owned]].map(([t, s, okk]) => html`<div class="item">
             <span class="ico ${okk ? 'green' : ''}">${ic(okk ? 'check' : 'clock')}</span><span class="grow"><span class="t">${t}</span><br><span class="s">${s}</span></span></div>`)}

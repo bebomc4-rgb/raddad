@@ -918,12 +918,14 @@ r.get('/api/admin/tenants', ctx => {
 r.put('/api/admin/tenants/:id', ctx => {
   sup(ctx);
   const id = Number(ctx.params.id);
-  const { plan_id, add_months, plan_expires_at, status } = ctx.body;
+  const { plan_id, add_months, add_days, plan_expires_at, status } = ctx.body;
   const t = getTenant(id);
   need(t, 404, 'غير موجود');
   if (plan_id) need(q.get('SELECT 1 FROM plans WHERE id = ?', plan_id), 400, 'خطة غير موجودة');
   let exp = plan_expires_at !== undefined ? plan_expires_at : t.plan_expires_at;
   if (add_months) exp = Math.max(exp || 0, Math.floor(Date.now() / 1000)) + Number(add_months) * 30 * 86400;
+  if (add_days) exp = Math.max(exp || 0, Math.floor(Date.now() / 1000)) + Number(add_days) * 86400; // تجربة بالأيام
+  if (add_months || add_days) q.run('UPDATE tenants SET bot_enabled = 1 WHERE id = ?', id); // المدير فعّل المجيب: بيشتغل فوراً
   q.run('UPDATE tenants SET plan_id = COALESCE(?, plan_id), plan_expires_at = ?, status = COALESCE(?, status) WHERE id = ?',
     plan_id || null, exp || null, ['active', 'suspended'].includes(status) ? status : null, id);
   if (status === 'suspended') qrConn.stop(id);

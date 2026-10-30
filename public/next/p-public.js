@@ -6,7 +6,7 @@ const topbar = () => html`<header class="site-top">
   <a class="brand" href="#/"><img src="/icon.svg" alt=""><span><b>K FAST AI</b><small>واتسابك بيشتغل عنك</small></span></a>
   <nav><a href="#/" data-scroll="products">الخدمات</a><a href="#/" data-scroll="how">كيف بتشتغل</a><a href="#/" data-scroll="pricing">الأسعار</a><a href="#/" data-scroll="faq">أسئلة</a></nav>
   <span class="grow"></span>
-  <a class="btn btn-ghost btn-sm" href="#/login">دخول</a><a class="btn btn-primary btn-sm" href="#/register">ابدأ ببلاش</a>
+  <a class="btn btn-ghost btn-sm" href="#/login">دخول</a><a class="btn btn-primary btn-sm" href="#/register">اعمل حساب</a>
 </header>`;
 
 const minPrice = obj => { const v = Object.values(obj || {}).filter(x => x != null && x > 0); return v.length ? Math.min(...v) : null; };
@@ -36,7 +36,7 @@ export async function landing(view) {
         <span class="eyebrow">${ic('sparkle')} جديد: حفظ كل أرقامك القديمة من سنين</span>
         <h1>واتسابك <span class="grad-text">بيشتغل عنك</span>،<br>وإنت مرتاح</h1>
         <p class="lead">مجيب ذكي بيرد على زباينك ٢٤ ساعة باللهجة السورية، وحفظ تلقائي لكل رقم بيراسلك. كل خدمة لحالها، وبتدفع بس على يلي بدك ياه.</p>
-        <div class="cta"><a class="btn btn-primary btn-lg" href="#/register">ابدأ هلق ببلاش ${ic('fwd')}</a><a class="btn btn-lg" href="#/" data-scroll="pricing">شوف الأسعار</a></div>
+        <div class="cta"><a class="btn btn-primary btn-lg" href="#/register">اعمل حسابك ${ic('fwd')}</a><a class="btn btn-lg" href="#/" data-scroll="pricing">شوف الأسعار</a></div>
         <div class="trust"><span>${ic('check')} بتربط بمسح QR متل واتساب ويب</span><span>${ic('check')} بتدفع بشام كاش أو كاش</span><span>${ic('check')} بتوقف وقت ما بدك</span></div>
       </div>
       <div class="phone" aria-hidden="true"><div class="phone-screen">
@@ -100,7 +100,7 @@ export async function landing(view) {
           <div class="row between"><h3>${p.name}</h3>${i === 1 ? html`<span class="pill gold plain">الأكتر طلباً</span>` : ''}</div>
           <div><span class="price">${money(p.prices?.[months], p.currency)}</span> <small class="muted">/ ${periodName(months)}</small></div>
           <ul>${(p.features?.length ? p.features : [`${n(p.ai_replies_per_day)} رد ذكي باليوم`, `حتى ${n(p.max_products)} منتج`]).slice(0, 6).map(f => html`<li>${f}</li>`)}</ul>
-          <a class="btn btn-primary btn-block" href="#/register" style="margin-top:auto">ابدأ ببلاش</a></div>`)}</div>`);
+          <a class="btn btn-primary btn-block" href="#/register" style="margin-top:auto">اشترك</a></div>`)}</div>`);
     } else {
       const s = tab === 'contacts_new' ? sNew : sOld;
       const entries = Object.entries(s.prices || {}).filter(([, v]) => v != null);
@@ -137,7 +137,7 @@ export async function login(view) {
       <div class="field"><label for="pw">كلمة السر</label><input class="input" id="pw" name="password" type="password" autocomplete="current-password" required dir="ltr"></div>
       <button class="btn btn-primary btn-lg btn-block" type="submit">دخول</button>
     </form>
-    <p class="small muted" style="text-align:center">ما عندك حساب؟ <a class="linkish" href="#/register">اعمل حساب ببلاش</a></p>
+    <p class="small muted" style="text-align:center">ما عندك حساب؟ <a class="linkish" href="#/register">اعمل حساب</a></p>
     <p class="tiny faint" style="text-align:center">نسيت كلمة السر؟ تواصل معنا على واتساب ومنرجّعلك ياها.</p>
   </div>`);
   view.on('submit', '[data-f]', async (e, f) => {
@@ -153,14 +153,10 @@ export async function login(view) {
 }
 
 export async function register(view) {
-  let want = 'numbers';
   authShell(view, html`<div class="card pad-lg stack">
     <a class="brand" href="#/" style="padding:0"><img src="/icon.svg" alt=""><span><b>K FAST AI</b></span></a>
-    <div><h2>اعمل حسابك ببلاش</h2><p class="muted">بتختار وبتدفع بعدين، بس على يلي بدك ياه.</p></div>
+    <div><h2>اعمل حسابك</h2><p class="muted">بعدها بتختار الخدمة يلي بدك ياها وبتشترك فيها.</p></div>
     <form class="stack" data-f>
-      <div class="field"><label>شو بدك تستخدم؟</label><div class="chips" data-want>
-        <button type="button" class="chip on" data-w="numbers">حفظ الأرقام</button><button type="button" class="chip" data-w="bot">المجيب الذكي</button><button type="button" class="chip" data-w="both">الاتنين</button></div>
-        <span class="hint" data-want-hint>المجيب ما رح يرد على حدا. فيك تشغّلو بعدين إذا حبيت.</span></div>
       <div class="field"><label for="ph">رقم موبايلك</label><input class="input" id="ph" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="09xxxxxxxx" required dir="ltr" autofocus><span class="hint">رقم سوري. بتدخل فيه لحسابك بعدين.</span></div>
       <div class="field"><label for="pw">كلمة السر</label><input class="input" id="pw" name="password" type="password" autocomplete="new-password" minlength="8" required dir="ltr"><span class="hint">8 أحرف أو أكتر</span></div>
       <div class="field"><label for="pw2">عيد كلمة السر</label><input class="input" id="pw2" name="password2" type="password" autocomplete="new-password" minlength="8" required dir="ltr"></div>
@@ -168,18 +164,12 @@ export async function register(view) {
     </form>
     <p class="small muted" style="text-align:center">عندك حساب؟ <a class="linkish" href="#/login">ادخل</a></p>
   </div>`);
-  const hints = { numbers: 'المجيب ما رح يرد على حدا. فيك تشغّلو بعدين إذا حبيت.', bot: 'المجيب بيبلّش بتجربة مجانية بعد ما تربط واتسابك.', both: 'منشغّل الاتنين، والمجيب بيبلّش بتجربة مجانية.' };
-  view.on('click', '[data-want] .chip', (e, b) => {
-    want = b.dataset.w; view.el.querySelectorAll('[data-want] .chip').forEach(x => x.classList.toggle('on', x === b));
-    view.el.querySelector('[data-want-hint]').textContent = hints[want];
-  });
   view.on('submit', '[data-f]', async (e, f) => {
     e.preventDefault();
     await busy(f.querySelector('[type=submit]'), async () => {
       try {
         if (f.password.value !== f.password2.value) { fail(new Error('كلمة السر والتأكيد مو متل بعض')); f.password2.focus(); return; }
-        await api('/api/v2/auth/register', { method: 'POST', body: { phone: f.phone.value, password: f.password.value, password2: f.password2.value, bot_enabled: want !== 'numbers' } });
-        try { localStorage.setItem('kf-want', want); } catch {}
+        await api('/api/v2/auth/register', { method: 'POST', body: { phone: f.phone.value, password: f.password.value, password2: f.password2.value } });
         await loadMe(); connectLive(); go('/whatsapp?welcome=1', true);
       } catch (err) { fail(err); }
     });

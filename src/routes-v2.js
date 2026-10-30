@@ -32,9 +32,10 @@ const plansWithPrices = () => q.all('SELECT * FROM plans WHERE is_public = 1 ORD
 function responderState(t) {
   const plan = getPlan(t);
   const paid = t.plan_id !== 'free' && !subscriptionExpired(t);
-  const gate = t.bot_enabled ? trialStatus(t) : { ok: false, code: 'off' };
+  const gate = trialStatus(t);
+  const unlocked = paid || isSuperTenant(t.id) || gate.code === 'trial';
   return {
-    enabled: !!t.bot_enabled, plan_id: t.plan_id, plan_name: plan.name, active_plan: plan.id, paid,
+    enabled: !!t.bot_enabled, unlocked, plan_id: t.plan_id, plan_name: plan.name, active_plan: plan.id, paid,
     expires_at: t.plan_expires_at, expired: subscriptionExpired(t), gate,
     replying: !!t.bot_enabled && t.status === 'active' && !subscriptionExpired(t) && gate.ok,
     usage: usageToday(t.id), limit: plan.ai_replies_per_day, trial_seconds: trialSeconds()
@@ -47,7 +48,7 @@ r.get('/api/public/catalog', () => ({
   registration_open: getSetting('registration_open', true),
   plans: plansWithPrices(),
   services: listServices(),
-  trial: getSetting('trial', { value: 3, unit: 'days' })
+  trial: getSetting('auto_trial', false) ? getSetting('trial', { value: 3, unit: 'days' }) : null
 }));
 
 // ===== أنا: ملخص اللوحة الجديدة =====
@@ -85,7 +86,7 @@ r.post('/api/v2/auth/register', ctx => {
       JSON.stringify({ ...DEFAULT_KNOWLEDGE }));
     const u = q.run('INSERT INTO users (tenant_id, email, phone, name, pass_hash, role, is_super) VALUES (?, ?, ?, ?, ?, ?, ?)',
       t.lastInsertRowid, phone + PHONE_MAIL, phone, '', hashPassword(pw), 'owner', first ? 1 : 0);
-    if (b.bot_enabled === false && !first) q.run('UPDATE tenants SET bot_enabled = 0 WHERE id = ?', t.lastInsertRowid);
+    if (!first) q.run('UPDATE tenants SET bot_enabled = 0 WHERE id = ?', t.lastInsertRowid);
     return Number(u.lastInsertRowid);
   });
   ctx.setCookie(createSession(userId));
@@ -163,6 +164,7 @@ r.get('/api/v2/bot-settings', ctx => {
 r.put('/api/v2/responder', ctx => {
   owner(ctx);
   const on = !!ctx.body.enabled;
+  if (on) need(responderState(ctx.tenant).unlocked, 403, 'المجيب مقفول. اشترك من صفحة الاشتراكات ليتفعّل');
   q.run('UPDATE tenants SET bot_enabled = ? WHERE id = ?', on ? 1 : 0, ctx.tenant.id);
   return responderState(getTenant(ctx.tenant.id));
 });
@@ -300,7 +302,7 @@ r.post('/api/admin/v2/tenants/:id/service', ctx => {
   const id = Number(ctx.params.id), { service_id, action } = ctx.body;
   need(getTenant(id), 404, 'المشترك غير موجود');
   need(serviceExists(service_id), 400, 'الخدمة غير موجودة');
-  if (action === 'grant') grantService(id, service_id, parseInt(ctx.body.months, 10) || 0);
+  if (action === 'grant') grantService(id, service_id, parseInt(ctx.body.months, 10) || 0, parseInt(ctx.body.days, 10) || 0);
   else if (action === 'revoke') revokeService(id, service_id);
   else if (action === 'pause' || action === 'resume') setPaused(id, service_id, action === 'pause');
   else throw new HttpError(400, 'أمر غير معروف');

@@ -28,6 +28,8 @@ export function trialStatus(t) {
   const paid = t.plan_id !== 'free' && !subscriptionExpired(t);
   let row = q.get('SELECT * FROM trial_numbers WHERE phone = ?', phone);
   if (!row) {
+    // ما في تجربة تلقائية (قرار صاحب المنصة): كل الميزات مقفولة لحتى المدير يفعّلها أو يعطي تجربة
+    if (!getSetting('auto_trial', false)) return paid ? { ok: true, code: 'paid' } : { ok: false, code: 'locked', message: 'المجيب مقفول. بيتفعّل لما تشترك' };
     // رقم جديد: بنسجّله، وإذا مشترك مدفوع بنعتبر التجربة مستهلكة (بدون مدة)
     q.run('INSERT INTO trial_numbers (phone, tenant_id, started_at, ends_at) VALUES (?, ?, ?, ?)', phone, t.id, now, paid ? now : now + trialSeconds());
     row = q.get('SELECT * FROM trial_numbers WHERE phone = ?', phone);

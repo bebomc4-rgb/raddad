@@ -27,7 +27,7 @@ export async function overview(view) {
         ${pending.length ? html`<div class="list">${pending.map(p => html`<a class="item click" href="#/admin/payments"><span class="avatar">${ic('card')}</span><span class="grow"><span class="t">${p.tenant_name}</span><br><span class="s">${p.name} · ${periodName(p.months)} · ${money(p.amount)}</span></span><span class="pill warn">${p.method || ''}</span></a>`)}</div>`
           : html`<div class="empty"><div class="ico">${ic('check')}</div><p>ما في شي ناطر 👌</p></div>`}</div>
       <div class="card pad-lg"><div class="card-h"><h3>${ic('sparkle')} اختصارات</h3></div>
-        <div class="list">${[['/admin/prices', 'tag', 'غيّر الأسعار والباقات'], ['/admin/settings', 'sliders', 'رقم شام كاش ومدة التجربة'], ['/admin/alerts', 'bell', `تنبيهات التجربة${o.trial_alerts ? ` (${o.trial_alerts})` : ''}`], ['/admin/tools', 'tool', 'أدواتي الخاصة (الاستوديو، الصور، الرابط…)']].map(([h, i, t]) => html`<a class="item click" href="#${h}"><span class="ico">${ic(i)}</span><span class="grow t">${t}</span>${ic('fwd')}</a>`)}</div></div>
+        <div class="list">${[['/admin/prices', 'tag', 'غيّر الأسعار والباقات'], ['/admin/settings', 'sliders', 'رقم شام كاش والتسجيل'], ['/admin/alerts', 'bell', `تنبيهات التجربة${o.trial_alerts ? ` (${o.trial_alerts})` : ''}`], ['/admin/tools', 'tool', 'أدواتي الخاصة (الاستوديو، الصور، الرابط…)']].map(([h, i, t]) => html`<a class="item click" href="#${h}"><span class="ico">${ic(i)}</span><span class="grow t">${t}</span>${ic('fwd')}</a>`)}</div></div>
     </div></div>`);
 }
 
@@ -88,16 +88,16 @@ function manage(t, plans, done) {
   modal({
     title: t.name, wide: true,
     body: html`<div class="stack">
-      <div class="kv"><dt>الإيميل</dt><dd class="ltr">${t.email || '—'}</dd><dt>واتساب</dt><dd>${t.wa_phone ? phoneFmt(t.wa_phone) : 'مو مربوط'}</dd><dt>سجّل</dt><dd>${date(t.created_at)}</dd><dt>ردود ذكية (7 أيام)</dt><dd>${n(t.ai_7d)}</dd></div>
+      <div class="kv"><dt>الرقم/الإيميل</dt><dd class="ltr">${t.email || '—'}</dd><dt>واتساب</dt><dd>${t.wa_phone ? phoneFmt(t.wa_phone) : 'مو مربوط'}</dd><dt>سجّل</dt><dd>${date(t.created_at)}</dd><dt>ردود ذكية (7 أيام)</dt><dd>${n(t.ai_7d)}</dd></div>
       <div class="divider"></div>
       ${['contacts_new', 'contacts_old'].map(sid => { const s = t.services[sid]; return html`<div class="row between"><span><b>${sid === 'contacts_new' ? 'حفظ كل رقم جديد' : 'حفظ الأرقام القديمة'}</b><br><span class="small muted">${s.owned ? (s.forever ? 'شغّالة دايماً' : `لـ ${date(s.expires_at)}`) + (s.paused ? ' · موقوفة' : '') : 'غير مشترك'}</span></span>
-        <span class="row">${sid === 'contacts_new' ? html`<select class="select" style="width:auto;min-height:38px" data-months="${sid}">${[1, 3, 6, 12].map(m => html`<option value="${m}">${periodName(m)}</option>`)}</select>` : ''}
+        <span class="row">${sid === 'contacts_new' ? html`<select class="select" style="width:auto;min-height:38px" data-months="${sid}">${[['d1', 'تجربة يوم'], ['d3', 'تجربة 3 أيام'], ['d7', 'تجربة أسبوع'], ...[1, 3, 6, 12].map(m => [String(m), periodName(m)])].map(([v, l]) => html`<option value="${v}" ${v === '1' ? 'selected' : ''}>${l}</option>`)}</select>` : ''}
           <button class="btn btn-sm btn-primary" data-svc="grant" data-sid="${sid}">${s.owned && sid === 'contacts_new' ? 'مدّد' : 'فعّل'}</button>
           ${s.owned ? html`<button class="btn btn-sm btn-danger" data-svc="revoke" data-sid="${sid}">إلغاء</button>` : ''}</span></div>`; })}
       <div class="divider"></div>
-      <div class="row between"><span><b>المجيب الذكي</b><br><span class="small muted">${t.plan_id !== 'free' ? `${t.plan_id} لـ ${date(t.plan_expires_at)}` : 'مجاني/تجربة'}</span></span>
+      <div class="row between"><span><b>المجيب الذكي</b><br><span class="small muted">${t.plan_id !== 'free' ? `${t.plan_id} لـ ${date(t.plan_expires_at)}` : 'مقفول'}</span></span>
         <span class="row"><select class="select" style="width:auto;min-height:38px" data-plan>${plans.filter(p => p.id !== 'free').map(p => html`<option value="${p.id}" ${p.id === t.plan_id ? 'selected' : ''}>${p.name}</option>`)}</select>
-          <select class="select" style="width:auto;min-height:38px" data-plan-months>${[1, 3, 6, 12].map(m => html`<option value="${m}">${periodName(m)}</option>`)}</select><button class="btn btn-sm btn-primary" data-plan-go>فعّل/مدّد</button></span></div>
+          <select class="select" style="width:auto;min-height:38px" data-plan-months>${[['d1', 'تجربة يوم'], ['d3', 'تجربة 3 أيام'], ['d7', 'تجربة أسبوع'], ...[1, 3, 6, 12].map(m => [String(m), periodName(m)])].map(([v, l]) => html`<option value="${v}" ${v === '1' ? 'selected' : ''}>${l}</option>`)}</select><button class="btn btn-sm btn-primary" data-plan-go>فعّل/مدّد</button></span></div>
       <div class="divider"></div>
       <div class="row between"><span><b>الحساب</b><br><span class="small muted">${t.status === 'suspended' ? 'موقوف: ما بيشتغل شي' : 'شغّال'}</span></span>
         <button class="btn btn-sm ${t.status === 'suspended' ? 'btn-primary' : 'btn-danger'}" data-status="${t.status === 'suspended' ? 'active' : 'suspended'}">${t.status === 'suspended' ? 'رجّعو' : 'وقّف الحساب'}</button></div>
@@ -108,11 +108,12 @@ function manage(t, plans, done) {
         const b = e.target.closest('[data-svc]');
         if (b) {
           if (b.dataset.svc === 'revoke' && !await confirmBox('رح تنلغى الخدمة عن هالمشترك.', { ok: 'إلغاء الخدمة', danger: true })) return;
-          const months = Number(m.querySelector(`[data-months="${b.dataset.sid}"]`)?.value || 0);
-          busy(b, async () => { try { await api(`/api/admin/v2/tenants/${t.id}/service`, { method: 'POST', body: { service_id: b.dataset.sid, action: b.dataset.svc, months } }); await after(b.dataset.svc === 'grant' ? 'تفعّلت ✓' : 'انلغت'); } catch (err) { fail(err); } });
+          const pv = m.querySelector(`[data-months="${b.dataset.sid}"]`)?.value || '0';
+          const per = pv.startsWith('d') ? { days: Number(pv.slice(1)) } : { months: Number(pv) };
+          busy(b, async () => { try { await api(`/api/admin/v2/tenants/${t.id}/service`, { method: 'POST', body: { service_id: b.dataset.sid, action: b.dataset.svc, ...per } }); await after(b.dataset.svc === 'grant' ? 'تفعّلت ✓' : 'انلغت'); } catch (err) { fail(err); } });
         }
         const pg = e.target.closest('[data-plan-go]');
-        if (pg) busy(pg, async () => { try { await api(`/api/admin/tenants/${t.id}`, { method: 'PUT', body: { plan_id: m.querySelector('[data-plan]').value, add_months: Number(m.querySelector('[data-plan-months]').value) } }); await after('تفعّل المجيب ✓'); } catch (err) { fail(err); } });
+        if (pg) busy(pg, async () => { try { await api(`/api/admin/tenants/${t.id}`, { method: 'PUT', body: { plan_id: m.querySelector('[data-plan]').value, ...(v => v.startsWith('d') ? { add_days: Number(v.slice(1)) } : { add_months: Number(v) })(m.querySelector('[data-plan-months]').value) } }); await after('تفعّل المجيب ✓'); } catch (err) { fail(err); } });
         const st = e.target.closest('[data-status]');
         if (st) {
           if (st.dataset.status === 'suspended' && !await confirmBox('رح يوقف كلشي عند هالمشترك ويتفك ربط واتسابو مؤقتاً.', { ok: 'وقّف', danger: true })) return;
@@ -164,9 +165,9 @@ export async function platform(view) {
     <div class="card pad-lg stack"><h3>${ic('card')} الدفع</h3>
       <div class="field"><label>رقم شام كاش تبعك</label><input class="input" name="shamcash_number" value="${s.shamcash_number}" dir="ltr"><span class="hint">بيبيّن للزبون لما يختار شام كاش. إذا فاضي، بيبيّن بس الدفع باليد.</span></div>
       <div class="field"><label>تعليمات الدفع (اختياري)</label><textarea class="textarea" name="payment_instructions" rows="3">${s.payment_instructions}</textarea></div></div>
-    <div class="card pad-lg stack"><h3>${ic('clock')} التجربة المجانية للمجيب</h3>
-      <div class="row"><input class="input" style="width:120px" name="trial_value" inputmode="numeric" dir="ltr" value="${s.trial.value}"><select class="select" style="width:auto" name="trial_unit"><option value="days" ${s.trial.unit === 'days' ? 'selected' : ''}>أيام</option><option value="hours" ${s.trial.unit === 'hours' ? 'selected' : ''}>ساعات</option></select></div>
-      <span class="hint">بتنحسب على رقم الواتساب، مو على الحساب.</span></div>
+    <div class="card pad-lg stack"><h3>${ic('lock')} الميزات والتجربة</h3>
+      <p class="muted">كل حساب جديد بيكون مقفول. إنت بتفعّل الميزات لكل مشترك، وبتعطيه تجربة مجانية إذا بدك، من «المشتركين» ← «إدارة».</p>
+      <input type="hidden" name="trial_value" value="${s.trial.value}"><input type="hidden" name="trial_unit" value="${s.trial.unit}"></div>
     <div class="card pad-lg stack"><h3>${ic('user')} التسجيل والعلامة</h3>
       <label class="check"><input type="checkbox" name="registration_open" ${s.registration_open ? 'checked' : ''}><span><b>التسجيل مفتوح</b><br><span class="small muted">إذا سكّرتو، ما حدا جديد بيقدر يعمل حساب</span></span></label>
       <div class="grid g2"><div class="field"><label>اسم المنصة</label><input class="input" name="brand_name" value="${s.brand.name}"></div><div class="field"><label>اللون</label><input class="input" type="color" name="brand_color" value="${s.brand.color}" style="padding:4px;min-height:46px"></div></div>

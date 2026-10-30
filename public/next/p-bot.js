@@ -11,18 +11,18 @@ export async function overview(view) {
     const me = await loadMe(); if (!view.alive) return;
     paintNav();
     const r = me.responder, c = me.counts, linked = me.wa?.status === 'open';
-    const gateMsg = r.enabled && !r.replying ? (r.expired ? 'خلص الاشتراك. جدّد ليرجع يرد.' : r.gate?.message || '') : '';
+    const gateMsg = r.unlocked && r.enabled && !r.replying ? (r.expired ? 'خلص الاشتراك. جدّد ليرجع يرد.' : r.gate?.message || '') : '';
     view.html(html`<div class="stack">
       ${!linked ? html`<div class="banner">${ic('wa')}<span class="grow">واتسابك مو مربوط، فالمجيب ما فيه يرد هلق.</span><a class="btn btn-sm btn-primary" href="#/whatsapp">اربط</a></div>` : ''}
       <div class="card pad-lg glow">
         <div class="row between">
           <span class="row nowrap"><span class="ico lg blue">${ic('bot')}</span><span><h2>${r.enabled ? 'المجيب شغّال' : 'المجيب مطفي'}</h2><span class="muted small">${r.enabled ? 'بيرد على كل زبون بيراسلك' : 'ما عم يرد على حدا'}</span></span></span>
-          <label class="switch" style="transform:scale(1.15)"><input type="checkbox" data-toggle ${r.enabled ? 'checked' : ''}><span></span></label>
+          ${r.unlocked ? html`<label class="switch" style="transform:scale(1.15)"><input type="checkbox" data-toggle ${r.enabled ? 'checked' : ''}><span></span></label>` : html`<span class="pill plain">${ic('lock')} مقفول</span>`}
         </div>
         <div class="row" style="margin-top:16px">${responderPill(r)}
           ${r.paid ? html`<span class="pill plain">${r.plan_name} · لـ ${date(r.expires_at)}</span>` : r.gate?.code === 'trial' ? html`<span class="pill gold plain">${ic('clock')} ${left(r.gate.ends_at)} من التجربة</span>` : ''}</div>
         ${gateMsg ? html`<div class="note warn" style="margin-top:14px">${ic('alert')}<span class="grow">${gateMsg}</span><a class="btn btn-sm btn-primary" href="#/billing?tab=responder">اشترك</a></div>` : ''}
-        ${!r.enabled ? html`<p class="small muted" style="margin-top:12px">أول ما تشغّلو بتبلّش التجربة المجانية (${Math.round(r.trial_seconds / 86400) || 1} أيام).</p>` : ''}
+        ${!r.unlocked ? html`<div class="note" style="margin-top:14px">${ic('lock')}<span class="grow">المجيب مقفول. اشترك فيه وبيتفعّل عندك.</span><a class="btn btn-sm btn-primary" href="#/billing?tab=responder">اشترك</a></div>` : ''}
       </div>
       <div class="grid g4">
         <div class="card stat"><span class="k">ردود اليوم</span><span class="v num">${n(r.usage?.ai_replies)}</span><span class="tiny faint">من ${n(r.limit)} باليوم</span></div>
