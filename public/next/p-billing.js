@@ -20,7 +20,7 @@ export async function checkout({ kind, id, months, onDone }) {
     if (item.kind === 'once') months = 0; price = item.prices[months]; cur = item.currency; title = item.name;
   } else {
     item = b.plans.find(p => p.id === id); if (!item) return fail(new Error('الباقة مو موجودة'));
-    price = item.prices[months]; cur = item.currency; title = `المجيب الذكي — ${item.name}`;
+    price = item.prices[months]; cur = item.currency; title = 'المجيب الذكي';
   }
   // كل المدد يلي إلها سعر (شهر، 3، 6، سنة): الزبون بيختار
   const periods = Object.keys(item.prices || {}).map(Number).filter(m => m > 0 && item.prices[m] != null).sort((a, b2) => a - b2);

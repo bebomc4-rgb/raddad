@@ -52,20 +52,12 @@ function navItems(me) {
       { href: '/home', label: 'الرئيسية', icon: 'home' },
       { href: '/whatsapp', label: 'ربط واتساب', icon: 'wa', dot: me.wa?.status !== 'open' } ] },
     { group: 'الخدمات', links: [
-      { href: '/chats', label: 'واتساب', icon: 'wa' } ] },
-    { group: 'حفظ الأرقام', links: [
+      { href: '/chats', label: 'واتساب', icon: 'wa' },
+      { href: '/bot', label: 'المجيب الذكي', icon: 'bot', badge: (c.unread || 0) + (c.needs_human || 0) || 0 },
       { href: '/numbers/new', label: 'حفظ كل رقم جديد', icon: 'book' },
       { href: '/numbers/old', label: 'الأرقام القديمة', icon: 'history' } ] },
-    { group: 'المجيب الذكي', links: [
-      { href: '/bot', label: 'تشغيل المجيب', icon: 'bot' },
-      { href: '/bot/inbox', label: 'المحادثات', icon: 'chat', badge: (c.unread || 0) + (c.needs_human || 0) || 0 },
-      { href: '/bot/orders', label: 'الطلبات', icon: 'bag', badge: c.new_orders || 0 },
-      { href: '/bot/products', label: 'المنتجات', icon: 'box' },
-      { href: '/bot/settings', label: 'شخصية المجيب', icon: 'sliders' },
-      { href: '/bot/learn', label: 'علّم المجيب', icon: 'sparkle' },
-      { href: '/bot/try', label: 'جرّبو', icon: 'play' } ] },
     { group: 'حسابي', links: [
-      { href: '/billing', label: 'الاشتراكات والدفع', icon: 'card', badge: c.pending_payments ? '•' : 0 },
+      { href: '/billing', label: 'مدفوعاتي', icon: 'card', badge: c.pending_payments ? '•' : 0 },
       { href: '/account', label: 'الملف الشخصي', icon: 'user' } ] }
   ];
   if (me.user.is_super) items.push({ group: 'الإدارة', links: [
@@ -190,7 +182,7 @@ async function router() {
   let main;
   if (route.bare) { app.innerHTML = '<main class="bare"><div class="bare-in"></div></main>'; main = app.firstElementChild; }
   else {
-    if (!app.querySelector('.shell')) app.innerHTML = '<div class="shell"><div data-side></div><main class="main"><header class="topbar"></header><div data-imp></div><div class="content"></div></main><div data-tabs></div></div>';
+    if (!app.querySelector('.shell')) app.innerHTML = '<div class="shell"><div data-side></div><main class="main"><header class="topbar"></header><div data-imp></div><div data-subnav></div><div class="content"></div></main><div data-tabs></div></div>';
     paintNav(path);
     main = app.querySelector('.main');
     main.querySelector('.content').className = 'content';
@@ -217,6 +209,12 @@ export function paintNav(path = parseHash().path) {
   if (!me || !app.querySelector('.shell')) return;
   app.querySelector('[data-side]').innerHTML = renderSide(me, path);
   app.querySelector('[data-tabs]').innerHTML = renderTabs(me, path);
+  const sn = app.querySelector('[data-subnav]');
+  if (sn) {
+    const BOT = [['/bot', 'التشغيل والاشتراك'], ['/bot/inbox', 'المحادثات'], ['/bot/orders', 'الطلبات'], ['/bot/products', 'المنتجات'], ['/bot/settings', 'الشخصية'], ['/bot/learn', 'علّم المجيب'], ['/bot/try', 'جرّبو']];
+    const cur = BOT.filter(([h]) => path === h || path.startsWith(h + '/')).sort((a, b) => b[0].length - a[0].length)[0]?.[0];
+    sn.innerHTML = path === '/bot' || path.startsWith('/bot/') ? `<nav class="subnav">${BOT.map(([h, t]) => `<a href="#${h}" class="${h === cur ? 'on' : ''}">${esc(t)}</a>`).join('')}</nav>` : '';
+  }
   const imp = app.querySelector('[data-imp]');
   if (imp) imp.innerHTML = me.impersonating ? `<div class="imp-bar">${icon('user')}<span class="grow">إنت داخل على حساب <b>${esc(me.tenant.name)}</b></span><button class="btn btn-sm" data-back-admin>ارجع لحسابي</button></div>` : '';
 }

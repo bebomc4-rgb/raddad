@@ -497,3 +497,9 @@ kbd { font-family: inherit; font-size: 12.5px; padding: 1px 8px; border-radius: 
 .sc-qr { display: flex; flex-direction: column; align-items: center; gap: 6px; } .sc-qr img { width: min(240px, 70vw); border-radius: 16px; background: #000; }
 .sc-code { word-break: break-all; font-size: 13px; }
 .period-pick { grid-template-columns: repeat(2, 1fr); }
+
+/* أقسام المجيب */
+.subnav { display: flex; gap: 6px; overflow-x: auto; padding: 0 clamp(16px, 3vw, 34px) 10px; scrollbar-width: none; }
+.subnav::-webkit-scrollbar { display: none; }
+.subnav a { flex: none; padding: 8px 14px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); }
+.subnav a.on { color: #fff; background: linear-gradient(135deg, var(--primary), var(--violet)); border-color: transparent; }

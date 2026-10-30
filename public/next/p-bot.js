@@ -21,8 +21,8 @@ export async function overview(view) {
         </div>
         <div class="row" style="margin-top:16px">${responderPill(r)}
           ${r.paid ? html`<span class="pill plain">${r.plan_name} · لـ ${date(r.expires_at)}</span>` : r.gate?.code === 'trial' ? html`<span class="pill gold plain">${ic('clock')} ${left(r.gate.ends_at)} من التجربة</span>` : ''}</div>
-        ${gateMsg ? html`<div class="note warn" style="margin-top:14px">${ic('alert')}<span class="grow">${gateMsg}</span><a class="btn btn-sm btn-primary" href="#/billing?tab=responder">اشترك</a></div>` : ''}
-        ${!r.unlocked ? html`<div class="note" style="margin-top:14px">${ic('lock')}<span class="grow">المجيب مقفول. اشترك فيه وبيتفعّل عندك.</span><a class="btn btn-sm btn-primary" href="#/billing?tab=responder">اشترك</a></div>` : ''}
+        ${gateMsg ? html`<div class="note warn" style="margin-top:14px">${ic('alert')}<span class="grow">${gateMsg}</span><a class="btn btn-sm btn-primary" href="#" data-buy-bot>اشترك</a></div>` : ''}
+        ${!r.unlocked ? html`<div class="note" style="margin-top:14px">${ic('lock')}<span class="grow">المجيب مقفول. اشترك فيه وبيتفعّل عندك.</span><a class="btn btn-sm btn-primary" href="#" data-buy-bot>اشترك</a></div>` : ''}
       </div>
       <div class="grid g4">
         <div class="card stat"><span class="k">ردود اليوم</span><span class="v num">${n(r.usage?.ai_replies)}</span><span class="tiny faint">بلا حدود</span></div>
@@ -38,6 +38,10 @@ export async function overview(view) {
     </div>`);
   };
   await paint();
+  view.on('click', '[data-buy-bot]', async (e) => {
+    e.preventDefault();
+    try { const b = await api('/api/v2/billing'); const plan = (b.plans || []).find(x => x.id !== 'free'); if (!plan) throw new Error('ما في باقة للمجيب لسا'); checkout({ kind: 'plan', id: plan.id, months: 1, onDone: () => location.reload() }); } catch (err) { fail(err); }
+  });
   view.on('change', '[data-toggle]', async (e, i) => {
     try { await api('/api/v2/responder', { method: 'PUT', body: { enabled: i.checked } }); toast(i.checked ? 'المجيب اشتغل ✓' : 'المجيب انطفى'); await paint(); }
     catch (err) { fail(err); i.checked = !i.checked; }
