@@ -249,6 +249,16 @@ export async function start(tenantId, { pairPhone = null } = {}) {
             if (!ph) rememberLid(tenantId, jid);
           }
           if (ph) { found.push({ phone: ph }); seen(tenantId, ph, Number(m.messageTimestamp?.toNumber?.() ?? m.messageTimestamp ?? 0) || Math.floor(Date.now() / 1000)); }
+          // رمز «سجّل بالواتساب» وصل والمجيب طافي: أول ما يرجع بيرد عليه (إذا عمرو أقل من يوم)
+          const ts = Number(m.messageTimestamp?.toNumber?.() ?? m.messageTimestamp ?? 0);
+          if (ph && !m.key.fromMe && m.message && Number(tenantId) === KO_TENANT && Date.now() / 1000 - ts < 86400) {
+            const { text } = extract(m.message, true);
+            if (/KO-[A-Z0-9]{6}/i.test(text || '')) {
+              const { waClaim } = await import('../otp.js'); waClaim(text, ph);
+              const sent = await sock.sendMessage(jid, { text: '✅ حسابك بمتجر KO SPORT جاهز. ارجع للموقع وكمّل طلبك 🛒' }).catch(() => null);
+              const { markBotSent } = await import('../agent.js').catch(() => ({})); if (sent?.key?.id && typeof markBotSent === 'function') markBotSent(sent.key.id);
+            }
+          }
         } catch {}
       }
       if (found.length && hasService(tenantId, 'contacts_new')) queueContacts(tenantId, found);
