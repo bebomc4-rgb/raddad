@@ -80,7 +80,7 @@ const server = http.createServer(async (req, res) => {
       const S = await import('./src/sync.js');
       const k = String(req.headers['x-sync-key'] || ''), want = S.syncKey();
       const ok = k.length === want.length && crypto.timingSafeEqual(Buffer.from(k), Buffer.from(want));
-      if (!ok || failoverStatus().device !== 'pc') return json(res, 403, { error: 'ممنوع' });
+      if (!ok || !isActive()) return json(res, 403, { error: 'ممنوع' }); // بس الجهاز الشغّال هلق بيعطي بياناتو
       return json(res, 200, S.exportData());
     }
 
@@ -189,8 +189,17 @@ server.listen(config.port, config.host, () => {
   import('./src/sitesync.js').then(m => m.startSiteSync()).catch(e => console.error('[site]', e.message));
   Promise.all([import('./src/stories.js'), import('./src/routes-v2.js')]).then(([S, R]) => S.startStories(tid => isActive() && R.responderUnlocked(tid))).catch(e => console.error('[stories]', e.message));
   // الموبايل الاحتياط ما بيوجّه الرابط العام لعندو إلا لما يستلم (الكمبيوتر وقف)
-  // الكمبيوتر: نفق وبينشر. الموبايل الاحتياط: نفق جاهز بس ما بينشر لحتى يستلم
-  startTunnel(config.port, { publish: isActive() }).catch(e => console.error('[link]', e.message));
+  // الأساسي: قبل ما ياخد الرابط، إذا الجهاز التاني هوي الشغّال هلق منسحب منو آخر البيانات (الحسابات، الاشتراكات…) لحتى ما يضيع شي
+  // الاحتياط: نفق جاهز بس ما بينشر لحتى يستلم
+  (async () => {
+    if (isActive()) {
+      try {
+        const F = await import('./src/failover.js'), who = await F.whoIsLive(8000);
+        if (who && who !== F.DEVICE) { const S = await import('./src/sync.js'), u = getSetting('public_link', {}).last_url; if (u) await S.pullFromPC(u, { force: true }); }
+      } catch (e) { console.error('[failover] first sync', e.message); }
+    }
+    await startTunnel(config.port, { publish: isActive() });
+  })().catch(e => console.error('[link]', e.message));
   startFailover(on => { if (on) { if (tunnelRunning()) setPublishing(true); else startTunnel(config.port).catch(e => console.error('[link]', e.message)); import('./src/agent.js').then(a => a.catchUp(10)).catch(e => console.error('[failover] catch up', e.message)); import('./src/whatsapp/baileys.js').then(b => b.flushKoLater()).catch(e => console.error('[failover] ko', e.message)); } else setPublishing(false); });
   startPrimaryWatch(() => startTunnel(config.port).catch(e => console.error('[link]', e.message)));
 });
