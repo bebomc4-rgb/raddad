@@ -1,7 +1,9 @@
 // ردّاد — منصة وكيل مبيعات ذكي على واتساب
 import http from 'node:http';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { config, ROOT, DATA_DIR } from './src/config.js';
 import './src/db.js';
 
@@ -172,6 +174,18 @@ server.listen(config.port, config.host, () => {
   startBatchWorker();
   startSubscriptionWorker();
   startAutoWorker();
+  // الكمبيوتر بياخد كل نسخة جديدة من GitHub لحالو: منشغّل حلقة التحديث إذا مو شغّالة (مرة وحدة، وبتضل شغّالة لحالها)
+  if (process.platform === 'win32' && failoverStatus().device === 'pc') {
+    try {
+      let alive = false;
+      try { const pid = Number(fs.readFileSync(path.join(DATA_DIR, 'update-loop.pid'), 'utf8')); if (pid) { process.kill(pid, 0); alive = true; } } catch {}
+      const script = path.join(ROOT, 'deploy', 'windows-update-loop.ps1');
+      if (!alive && fs.existsSync(script)) {
+        spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+        console.log('[update] auto-update from GitHub started (every 5 minutes)');
+      }
+    } catch (e) { console.error('[update]', e.message); }
+  }
   import('./src/sitesync.js').then(m => m.startSiteSync()).catch(e => console.error('[site]', e.message));
   Promise.all([import('./src/stories.js'), import('./src/routes-v2.js')]).then(([S, R]) => S.startStories(tid => isActive() && R.responderUnlocked(tid))).catch(e => console.error('[stories]', e.message));
   // الموبايل الاحتياط ما بيوجّه الرابط العام لعندو إلا لما يستلم (الكمبيوتر وقف)

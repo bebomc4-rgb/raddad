@@ -3,6 +3,7 @@
 $root = 'C:\raddad'
 Set-Location $root
 $log = "$root\data\update.log"
+Set-Content -Path "$root\data\update-loop.pid" -Value $PID
 while ($true) {
   Start-Sleep -Seconds 300
   try {
