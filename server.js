@@ -190,7 +190,7 @@ server.listen(config.port, config.host, () => {
   Promise.all([import('./src/stories.js'), import('./src/routes-v2.js')]).then(([S, R]) => S.startStories(tid => isActive() && R.responderUnlocked(tid))).catch(e => console.error('[stories]', e.message));
   // الموبايل الاحتياط ما بيوجّه الرابط العام لعندو إلا لما يستلم (الكمبيوتر وقف)
   if (isActive()) startTunnel(config.port).catch(e => console.error('[link]', e.message));
-  startFailover(on => { if (on) { startTunnel(config.port).catch(e => console.error('[link]', e.message)); import('./src/agent.js').then(a => a.catchUp(10)).catch(e => console.error('[failover] catch up', e.message)); } else stopTunnel(); });
+  startFailover(on => { if (on) { startTunnel(config.port).catch(e => console.error('[link]', e.message)); import('./src/agent.js').then(a => a.catchUp(10)).catch(e => console.error('[failover] catch up', e.message)); import('./src/whatsapp/baileys.js').then(b => b.flushKoLater()).catch(e => console.error('[failover] ko', e.message)); } else stopTunnel(); });
   startPrimaryWatch(() => startTunnel(config.port).catch(e => console.error('[link]', e.message)));
 });
 

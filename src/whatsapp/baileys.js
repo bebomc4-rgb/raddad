@@ -251,7 +251,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
           if (ph) { found.push({ phone: ph }); seen(tenantId, ph, Number(m.messageTimestamp?.toNumber?.() ?? m.messageTimestamp ?? 0) || Math.floor(Date.now() / 1000)); }
           // رمز «سجّل بالواتساب» وصل والمجيب طافي: أول ما يرجع بيرد عليه (إذا عمرو أقل من يوم)
           const ts = Number(m.messageTimestamp?.toNumber?.() ?? m.messageTimestamp ?? 0);
-          if (ph && !m.key.fromMe && m.message && Number(tenantId) === KO_TENANT && Date.now() / 1000 - ts < 86400) {
+          if (ph && !m.key.fromMe && m.message && Number(tenantId) === KO_TENANT && Date.now() / 1000 - ts < 86400 && isActive()) {
             const { text } = extract(m.message, true);
             if (/KO-[A-Z0-9]{6}/i.test(text || '')) {
               const { waClaim } = await import('../otp.js'); waClaim(text, ph);
@@ -282,7 +282,8 @@ export async function start(tenantId, { pairPhone = null } = {}) {
         }
         // «سجّل بالواتساب» بموقع KO SPORT: الزبون بعت رمز التأكيد. منأكّد رقمو ومنردّ عليه، والبوت ما بيرد على هالرسالة
         if (!m.key.fromMe && phone && text && Number(tenantId) === KO_TENANT && /KO-[A-Z0-9]{6}/i.test(text)) {
-          const { waClaim } = await import('../otp.js');
+          const { waClaim, holdForLater } = await import('../otp.js');
+          if (!isActive()) { holdForLater({ tenantId, jid, phone, text }); continue; } // الجهاز التاني هوي يلي بيرد هلق
           if (waClaim(text, phone)) {
             sock.readMessages([m.key]).catch(() => {});
             const { markBotSent } = await import('../agent.js').catch(() => ({}));
@@ -1003,4 +1004,17 @@ export async function postStatus(tenantId, { image, caption }) {
   const me = String(s.sock.user?.id || '').replace(/:\d+@/, '@'); if (me) set.add(me);
   await s.sock.sendMessage('status@broadcast', { image, caption }, { statusJidList: [...set], broadcast: true });
   return set.size;
+}
+
+// الجهاز صار هوي الشغّال (الكمبيوتر وقف): رسائل «سجّل بالواتساب» يلي وصلت وهوي ساكت، منأكّدها ومنرد عليها هلق
+export async function flushKoLater() {
+  const { takeLater, waClaim } = await import('../otp.js');
+  const { markBotSent } = await import('../agent.js').catch(() => ({}));
+  for (const x of takeLater()) {
+    const st = sessions.get(Number(x.tenantId)); if (!st?.sock || st.status !== 'open') continue;
+    waClaim(x.text, x.phone);
+    const sent = await st.sock.sendMessage(x.jid, { text: '✅ تأكّد رقمك. ارجع لموقع KO SPORT، حسابك جاهز وبتقدر تكمّل طلبك 🛒' }).catch(() => null);
+    if (sent?.key?.id && typeof markBotSent === 'function') markBotSent(sent.key.id);
+    console.log(`[wa] tenant ${x.tenantId}: KO account confirmed (after takeover) for ${x.phone}`);
+  }
 }

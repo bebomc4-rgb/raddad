@@ -33,7 +33,7 @@ function fresh(ts, nonce) {
 // «سجّل بالواتساب»: الموقع بيفتح رمز (KO-XXXXXX)، الزبون بيبعتو من واتسابو لرقم المتجر، فمنعرف رقمو أكيد
 const open = new Map(); // رمز → { at, phone }
 const early = new Map(); // رمز وصل بالواتساب قبل ما الموقع يلحق يفتحو (ثواني) → { at, phone }
-setInterval(() => { const n = Date.now(); for (const [k, v] of open) if (n - v.at > 20 * 60_000) open.delete(k); for (const [k, v] of early) if (n - v.at > 2 * 60_000) early.delete(k); }, 60_000).unref();
+setInterval(() => { const n = Date.now(); for (const [k, v] of open) if (n - v.at > 20 * 60_000) open.delete(k); for (const [k, v] of early) if (n - v.at > 30 * 60_000) early.delete(k); }, 60_000).unref();
 export async function koOpen(body) {
   const { t, ts, nonce, sig } = body || {};
   need(/^[A-Z0-9]{6}$/.test(t || ''), 400, 'رمز غلط'); fresh(ts, nonce);
@@ -49,7 +49,7 @@ export async function koClaim(body) {
   need(/^[A-Z0-9]{6}$/.test(t || ''), 400, 'رمز غلط'); fresh(ts, nonce);
   need(await verify(`claim|${t}|${ts}|${nonce}`, sig), 403, 'توقيع غلط');
   seen.set(nonce, Date.now());
-  const o = open.get(t);
+  const o = open.get(t) || early.get(t);
   return { ok: true, known: !!o, phone: o?.phone || '' };
 }
 // من رسائل الواتساب الواصلة لرقم المتجر: إذا فيها رمز مفتوح، منسجّل رقم المرسل. بيرجع true إذا الرسالة كانت رمز تأكيد
@@ -76,3 +76,8 @@ export async function koOtp(body) {
   need(sent, 503, 'الواتساب مو متصل هلق');
   return { ok: true };
 }
+
+// الرسائل يلي وصلت والجهاز احتياط (ساكت): منحفظها، وأول ما يستلم منأكّدها ومنرد عليها
+const later = [];
+export function holdForLater(item) { if (later.length < 500) later.push({ ...item, at: Date.now() }); }
+export function takeLater() { const n = Date.now(), out = later.filter(x => n - x.at < 24 * 3600_000); later.length = 0; return out; }
