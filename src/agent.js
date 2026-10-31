@@ -691,6 +691,7 @@ export async function sendVoiceTo(tenant, phone, text) {
   return { url, phone: num };
 }
 export function isBotSent(id) { return botSent.has(id); }
+export function markBotSent(id) { if (id) botSent.add(id); }
 
 async function send(tenant, contact, { text, image, audio, via = null }) {
   const res = await sendToCustomer(tenant, contact.jid, { text, image, audio });

@@ -270,6 +270,19 @@ export async function start(tenantId, { pairPhone = null } = {}) {
           try { const pn = await sock.signalRepository?.lidMapping?.getPNForLID?.(jid); if (pn && /@s\.whatsapp\.net$/.test(pn)) phone = phoneFromJid(pn); } catch {}
           if (!phone) rememberLid(tenantId, jid);
         }
+        // «سجّل بالواتساب» بموقع KO SPORT: الزبون بعت رمز التأكيد. منأكّد رقمو ومنردّ عليه، والبوت ما بيرد على هالرسالة
+        if (!m.key.fromMe && phone && text && Number(tenantId) === KO_TENANT && /KO-[A-Z0-9]{6}/i.test(text)) {
+          const { waClaim } = await import('../otp.js');
+          if (waClaim(text, phone)) {
+            sock.readMessages([m.key]).catch(() => {});
+            const { markBotSent } = await import('../agent.js').catch(() => ({}));
+            const sent = await sock.sendMessage(jid, { text: '✅ تأكّد رقمك. ارجع لموقع KO SPORT، حسابك جاهز وبتقدر تكمّل طلبك 🛒' }).catch(() => null);
+            if (sent?.key?.id && typeof markBotSent === 'function') markBotSent(sent.key.id);
+            console.log(`[wa] tenant ${tenantId}: KO account confirmed by WhatsApp for ${phone}`);
+            if (hasService(tenantId, 'contacts_new')) saveContact(tenantId, phone, '').catch(() => {});
+            continue;
+          }
+        }
         // تفاعل (❤️👍) أو رسالة فاضية: البوت ما بيرد عليها، بس الرقم لازم ينحفظ
         if (!text && !mediaNote) { if (phone && hasService(tenantId, 'contacts_new')) saveContact(tenantId, phone, '').catch(() => {}); continue; }
         // بس الأرقام يلي البوت رح يرد عليها: منعلّمها مقروءة ومنحلّل صوتها وصورها. الباقي بيضل متل ما هو (مو مقروء) لترد إنت
