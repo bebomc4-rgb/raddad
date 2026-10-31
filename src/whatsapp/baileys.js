@@ -662,7 +662,13 @@ async function auditContactsRun(tenantId, req) {
   fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit.json'), JSON.stringify(out, null, 1));
   console.log(`[wa] tenant ${tenantId}: audit — WhatsApp has ${cap.size} contacts (pn ${pnIdx}, lid ${lidIdx}); bot saved ${mine.length}, missing on WhatsApp ${missing.length}`);
 }
+// طوارئ (31 تشرين الأول): حفظ/تعديل جهات الاتصال موقّف كلياً لحتى صاحب المنصة يرجّع يشغّلو بنفسو.
+// ما في أي اسم بيتغيّر طول ما الملف data/contacts-frozen موجود (بينعمل لحالو هلق).
+const FROZEN = path.join(DATA_DIR, 'contacts-frozen');
+try { if (!fs.existsSync(path.join(DATA_DIR, 'contacts-unfrozen-by-owner'))) fs.writeFileSync(FROZEN, new Date().toISOString()); } catch {}
+const frozen = () => { try { return fs.existsSync(FROZEN); } catch { return true; } };
 export async function saveContact(tenantId, phone, name, force = false) {
+  if (frozen()) return false;
   if (!isActive() || !contactsOn(tenantId)) return false;
   const s = sessions.get(tenantId), num = String(phone || '').replace(/\D/g, '');
   if (!s?.sock?.addOrEditContact || s.status !== 'open' || num.length < 8) return false;
@@ -700,7 +706,7 @@ export function queueContacts(tenantId, list) {
   if (!bulkTimer) bulkTimer = setInterval(async () => {
     let busy = false;
     for (const [tid, mm] of bulk) {
-      if (mm.size && !contactsOn(tid)) { mm.clear(); continue; } // الخدمة انلغت أو انوقفت: منفضّي الطابور فوراً
+      if (mm.size && (frozen() || !contactsOn(tid))) { mm.clear(); continue; } // الخدمة انلغت أو انوقفت: منفضّي الطابور فوراً
       const st = sessions.get(tid); if (!mm.size || st?.status !== 'open') continue;
       const [num, name] = mm.entries().next().value; mm.delete(num); busy = true;
       await saveContact(tid, num, name).catch(() => {});
