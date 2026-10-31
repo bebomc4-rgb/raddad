@@ -25,6 +25,10 @@ onPhone = fs.FileExists("C:\raddad\RUN-ON-PHONE.txt")
 If Not onPhone And Not Running("watch-restart.ps1") Then
   sh.Run "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""C:\raddad\deploy\watch-restart.ps1""", 0, False
 End If
+' every new version on GitHub is pulled by itself (no one has to copy anything)
+If Not onPhone And Not Running("windows-update-loop.ps1") Then
+  sh.Run "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""C:\raddad\deploy\windows-update-loop.ps1""", 0, False
+End If
 If Not onPhone And Not Running("windows-start.bat") Then
   sh.Run "cmd /c ""C:\raddad\deploy\windows-start.bat""", 0, False
 End If
