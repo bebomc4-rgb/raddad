@@ -2,6 +2,8 @@
 # watch-restart.ps1 then restarts the server by itself. The data folder is never touched (it is not in git).
 $root = 'C:\raddad'
 Set-Location $root
+# never stop and ask «Unlink of file … failed. Should I try again? (y/n)» (that question froze the loop when a running .exe was locked)
+$env:GIT_ASK_YESNO = 'false'
 $log = "$root\data\update.log"
 Set-Content -Path "$root\data\update-loop.pid" -Value $PID
 while ($true) {
