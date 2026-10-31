@@ -775,3 +775,14 @@ async function remindersTick() {
   if (changed) try { fs.writeFileSync(f, JSON.stringify(list, null, 1)); } catch {}
 }
 setTimeout(remindersTick, 90_000); setInterval(remindersTick, 3600_000);
+
+// لما الموبايل الاحتياط يستلم: منرد عالرسائل يلي وصلت بآخر دقايق وما حدا رد عليها (وقت ما كان الكمبيوتر عم يطفي)
+export function catchUp(minutes = 10) {
+  const since = Math.floor(Date.now() / 1000) - minutes * 60;
+  const rows = q.all(`SELECT c.tenant_id, c.id FROM contacts c WHERE c.last_at >= ? AND
+    (SELECT direction FROM messages m WHERE m.contact_id = c.id ORDER BY m.id DESC LIMIT 1) = 'in' AND
+    (SELECT created_at FROM messages m WHERE m.contact_id = c.id ORDER BY m.id DESC LIMIT 1) >= ?`, since, since);
+  for (const r of rows) { const t = getTenant(r.tenant_id); if (t) scheduleReply(t, r.id); }
+  if (rows.length) console.log(`[failover] answering ${rows.length} chat(s) that came in while the PC was going off`);
+  return rows.length;
+}

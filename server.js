@@ -1,5 +1,6 @@
 // ردّاد — منصة وكيل مبيعات ذكي على واتساب
 import http from 'node:http';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { config, ROOT, DATA_DIR } from './src/config.js';
 import './src/db.js';
@@ -72,6 +73,14 @@ const server = http.createServer(async (req, res) => {
 
     // مين شغّال هلق (الكمبيوتر ولا الموبايل الاحتياط) — بيسألو الموبايل كل 30 ثانية
     if (pathname === '/api/whoami') return json(res, 200, failoverStatus());
+    // الموبايل الاحتياط بياخد من الكمبيوتر آخر المنتجات والإعدادات (بمفتاح سري بيعرفو الجهازين بس)
+    if (pathname === '/api/sync/export') {
+      const S = await import('./src/sync.js');
+      const k = String(req.headers['x-sync-key'] || ''), want = S.syncKey();
+      const ok = k.length === want.length && crypto.timingSafeEqual(Buffer.from(k), Buffer.from(want));
+      if (!ok || failoverStatus().device !== 'pc') return json(res, 403, { error: 'ممنوع' });
+      return json(res, 200, S.exportData());
+    }
 
     // ===== API =====
     if (pathname.startsWith('/api/')) {
@@ -167,7 +176,7 @@ server.listen(config.port, config.host, () => {
   Promise.all([import('./src/stories.js'), import('./src/routes-v2.js')]).then(([S, R]) => S.startStories(tid => isActive() && R.responderUnlocked(tid))).catch(e => console.error('[stories]', e.message));
   // الموبايل الاحتياط ما بيوجّه الرابط العام لعندو إلا لما يستلم (الكمبيوتر وقف)
   if (isActive()) startTunnel(config.port).catch(e => console.error('[link]', e.message));
-  startFailover(on => on ? startTunnel(config.port).catch(e => console.error('[link]', e.message)) : stopTunnel());
+  startFailover(on => { if (on) { startTunnel(config.port).catch(e => console.error('[link]', e.message)); import('./src/agent.js').then(a => a.catchUp(10)).catch(e => console.error('[failover] catch up', e.message)); } else stopTunnel(); });
   startPrimaryWatch(() => startTunnel(config.port).catch(e => console.error('[link]', e.message)));
 });
 

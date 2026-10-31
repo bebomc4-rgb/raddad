@@ -27,7 +27,7 @@ export function startFailover(onChange) {
   console.log('[failover] this device is the backup: it replies only while the PC is off');
   const tick = async () => {
     const pcUp = (await whoIsLive()) === 'pc';
-    if (pcUp) { downSince = 0; if (active) { active = false; console.log('[failover] PC is back — the phone goes quiet'); onChange(false); } return; }
+    if (pcUp) { downSince = 0; if (active) { active = false; console.log('[failover] PC is back — the phone goes quiet'); onChange(false); } import('./sync.js').then(m => m.pullFromPC(linkUrl())).catch(() => {}); return; }
     downSince ||= Date.now();
     if (!active && Date.now() - downSince >= 90_000) { active = true; console.log('[failover] PC is off — the phone takes over'); onChange(true); }
   };
