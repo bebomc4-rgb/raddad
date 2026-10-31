@@ -12,10 +12,10 @@ export const isActive = () => active;
 export const failoverStatus = () => ({ device: DEVICE, backup: STANDBY, active });
 
 const linkUrl = () => String(process.env.FAILOVER_URL || getSetting('public_link', {}).last_url || '').replace(/\/$/, '');
-async function whoIsLive() {
+async function whoIsLive(ms = 12000) {
   const u = linkUrl(); if (!u) return null;
   try {
-    const r = await fetch(u + '/api/whoami?t=' + Date.now(), { signal: AbortSignal.timeout(12000), headers: { 'cache-control': 'no-cache' } });
+    const r = await fetch(u + '/api/whoami?t=' + Date.now(), { signal: AbortSignal.timeout(ms), headers: { 'cache-control': 'no-cache' } });
     const j = r.ok ? await r.json().catch(() => null) : null;
     return j && j.device ? j.device : null;
   } catch { return null; }
@@ -25,13 +25,22 @@ async function whoIsLive() {
 export function startFailover(onChange) {
   if (!STANDBY) return;
   console.log('[failover] this device is the backup: it replies only while the PC is off');
+  // كل ثانيتين منسأل؛ إذا الكمبيوتر ما جاوب مرتين ورا بعض (والموبايل نفسو فيه نت) → الموبايل بيستلم خلال ~5 ثواني
+  let busy = false, misses = 0, n = 0;
   const tick = async () => {
-    const pcUp = (await whoIsLive()) === 'pc';
-    if (pcUp) { downSince = 0; if (active) { active = false; console.log(`[failover] ${new Date().toISOString()} PC is back — the phone goes quiet`); onChange(false); } import('./sync.js').then(m => m.pullFromPC(linkUrl())).catch(() => {}); return; }
-    downSince ||= Date.now();
-    if (!active && Date.now() - downSince >= 90_000) { active = true; console.log(`[failover] ${new Date().toISOString()} PC is off — the phone takes over`); onChange(true); }
+    if (busy || (active && ++n % 5)) return; // وهوي شغّال: كل 10 ثواني بيكفي ليعرف إنو الكمبيوتر رجع
+    busy = true;
+    try {
+      const who = await whoIsLive(active ? 8000 : 2500), pcUp = who === 'pc';
+      if (pcUp) { misses = 0; downSince = 0; if (active) { active = false; console.log(`[failover] ${new Date().toISOString()} PC is back — the phone goes quiet`); onChange(false); } import('./sync.js').then(m => m.pullFromPC(linkUrl())).catch(() => {}); return; }
+      if (active) return;
+      if (who === 'phone') { active = true; misses = 0; console.log(`[failover] ${new Date().toISOString()} the link already points to the phone — the phone takes over`); onChange(true); return; }
+      if (!(await online())) { misses = 0; return; } // النت عند الموبايل نفسو مقطوع: ما منستلم شي
+      downSince ||= Date.now();
+      if (++misses >= 2) { active = true; misses = 0; console.log(`[failover] ${new Date().toISOString()} PC is off — the phone takes over`); onChange(true); }
+    } finally { busy = false; }
   };
-  tick(); setInterval(tick, 30_000);
+  tick(); setInterval(tick, 2000);
 }
 
 // في نت؟ (منسأل Cloudflare نفسها، لأنو الرابط العام كلو عليها)

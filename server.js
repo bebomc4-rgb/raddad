@@ -24,7 +24,7 @@ import { bootAll } from './src/whatsapp/baileys.js';
 import { startBatchWorker } from './src/batch.js';
 import { startSubscriptionWorker } from './src/subscriptions.js';
 import { startAutoWorker } from './src/autofolder.js';
-import { startTunnel, stopTunnel } from './src/tunnel.js';
+import { startTunnel, stopTunnel, setPublishing, tunnelRunning } from './src/tunnel.js';
 import { isActive, failoverStatus, startFailover, startPrimaryWatch } from './src/failover.js';
 import { getSetting } from './src/db.js';
 
@@ -189,8 +189,9 @@ server.listen(config.port, config.host, () => {
   import('./src/sitesync.js').then(m => m.startSiteSync()).catch(e => console.error('[site]', e.message));
   Promise.all([import('./src/stories.js'), import('./src/routes-v2.js')]).then(([S, R]) => S.startStories(tid => isActive() && R.responderUnlocked(tid))).catch(e => console.error('[stories]', e.message));
   // الموبايل الاحتياط ما بيوجّه الرابط العام لعندو إلا لما يستلم (الكمبيوتر وقف)
-  if (isActive()) startTunnel(config.port).catch(e => console.error('[link]', e.message));
-  startFailover(on => { if (on) { startTunnel(config.port).catch(e => console.error('[link]', e.message)); import('./src/agent.js').then(a => a.catchUp(10)).catch(e => console.error('[failover] catch up', e.message)); import('./src/whatsapp/baileys.js').then(b => b.flushKoLater()).catch(e => console.error('[failover] ko', e.message)); } else stopTunnel(); });
+  // الكمبيوتر: نفق وبينشر. الموبايل الاحتياط: نفق جاهز بس ما بينشر لحتى يستلم
+  startTunnel(config.port, { publish: isActive() }).catch(e => console.error('[link]', e.message));
+  startFailover(on => { if (on) { if (tunnelRunning()) setPublishing(true); else startTunnel(config.port).catch(e => console.error('[link]', e.message)); import('./src/agent.js').then(a => a.catchUp(10)).catch(e => console.error('[failover] catch up', e.message)); import('./src/whatsapp/baileys.js').then(b => b.flushKoLater()).catch(e => console.error('[failover] ko', e.message)); } else setPublishing(false); });
   startPrimaryWatch(() => startTunnel(config.port).catch(e => console.error('[link]', e.message)));
 });
 

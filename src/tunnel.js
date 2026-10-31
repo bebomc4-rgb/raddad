@@ -111,7 +111,19 @@ function sweepOld() {
   });
 }
 
-export async function startTunnel(port) {
+// الموبايل الاحتياط: النفق بيضل شغّال «جاهز» وهوي ساكت، وبس يستلم منوجّه الرابط لعندو فوراً (بلا ما نستنى نفق جديد)
+let autoPublish = true, published = null;
+export function setPublishing(on) {
+  autoPublish = !!on;
+  if (on && status.target && published !== status.target) {
+    const t = status.target; status.state = 'publishing';
+    publish(t).then(() => { published = t; status.state = 'on'; }).catch(e => { status.state = 'error'; status.error = e.message; console.error('[link]', e.message); });
+  }
+  if (!on) published = null;
+}
+export const tunnelRunning = () => !!child;
+export async function startTunnel(port, { publish: pub = true } = {}) {
+  autoPublish = pub;
   const c = cfg();
   if (!c.enabled) { status.state = 'off'; return; }
   try { await ensureBinary(); } catch (e) { status.state = 'error'; status.error = e.message; return; }
@@ -130,13 +142,15 @@ export async function startTunnel(port) {
     }
     const m = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
     if (m && m[0] !== status.target && child === me) {
-      status.target = m[0]; status.state = 'publishing';
-      try { await publish(m[0]); status.state = 'on'; } catch (e) { status.state = 'error'; status.error = e.message; console.error('[link]', e.message); }
+      status.target = m[0];
+      if (!autoPublish) { status.state = 'ready'; console.log('[link] backup tunnel ready (not published):', m[0]); return; }
+      status.state = 'publishing';
+      try { await publish(m[0]); published = m[0]; status.state = 'on'; } catch (e) { status.state = 'error'; status.error = e.message; console.error('[link]', e.message); }
     }
   };
   me.stdout.on('data', onData); me.stderr.on('data', onData);
-  me.on('error', e => { if (child === me) { child = null; status.state = 'error'; status.error = 'cloudflared: ' + e.message; console.error('[link] cloudflared can\'t start:', e.message, WIN ? '' : '(Termux: pkg install cloudflared)'); setTimeout(() => { if (!child) startTunnel(port); }, 60000); } });
+  me.on('error', e => { if (child === me) { child = null; status.state = 'error'; status.error = 'cloudflared: ' + e.message; console.error('[link] cloudflared can\'t start:', e.message, WIN ? '' : '(Termux: pkg install cloudflared)'); setTimeout(() => { if (!child) startTunnel(port, { publish: autoPublish }); }, 60000); } });
   // بس إذا النفق الحالي وقف لحالو منعيد تشغيله (مو القديم يلي سكّرناه نحنا)
-  me.on('exit', code => { if (child === me) { child = null; console.error('[link] cloudflared stopped', code); status.state = 'restarting'; setTimeout(() => { if (!child) startTunnel(port); }, 10000); } });
+  me.on('exit', code => { if (child === me) { child = null; console.error('[link] cloudflared stopped', code); status.state = 'restarting'; setTimeout(() => { if (!child) startTunnel(port, { publish: autoPublish }); }, 10000); } });
 }
 export function stopTunnel() { if (child) { const c = child; child = null; status.state = 'off'; c.kill(); } }
