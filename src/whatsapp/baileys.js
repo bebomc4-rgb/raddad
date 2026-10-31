@@ -390,8 +390,22 @@ function mediaSource(url) {
 }
 
 // حفظ رقم الزبون بجهات اتصال الواتس (بالموبايل كمان). مرة وحدة لكل رقم، ومنحدّث الاسم إذا الزبون كتب اسمو الحقيقي
+// كتابة آمنة: منكتب بملف مؤقت وبعدين منبدّل (إعادة التشغيل بنص الكتابة كانت تخلّي الملف فاضي = كارثة الأسماء)،
+// ومنحتفظ بالنسخة يلي قبلها (.prev). وما منكتب أبداً دفتر فاضي فوق دفتر مليان.
+function writeJsonSafe(file, obj) {
+  const txt = JSON.stringify(obj);
+  try { const old = fs.statSync(file).size; if (txt.length < 50 && old > 1000) return; } catch {}
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, txt);
+  try { if (fs.statSync(file).size > 2) fs.copyFileSync(file, file.replace(/\.json$/, '.prev.json')); } catch {}
+  fs.renameSync(tmp, file);
+}
+function readJsonSafe(file) {
+  for (const f of [file, file.replace(/\.json$/, '.prev.json')]) { try { const o = JSON.parse(fs.readFileSync(f, 'utf8')); if (o && typeof o === 'object' && Object.keys(o).length) return o; } catch {} }
+  return {};
+}
 const SAVED_FILE = path.join(DATA_DIR, 'wa-saved-contacts.json');
-let saved = {}; try { saved = JSON.parse(fs.readFileSync(SAVED_FILE, 'utf8')); } catch {}
+let saved = readJsonSafe(SAVED_FILE);
 let savedT = null;
 const KO_TENANT = Number(process.env.KO_TENANT_ID || 1); // متجر Ko Sport: إلو تعلّم الأسماء الحقيقية من المحادثات
 // الأسماء الحقيقية يلي الزبون كتبها بالمحادثة أو بطلب (مو اسم الواتس)
@@ -456,7 +470,7 @@ export async function setRealName(tenantId, phone, name, area = '') {
 // ===== دفتر عناوين الواتس (الأسماء المحفوظة عندك) =====
 // بيوصل من الواتس مع كل ربط. أي رقم إلو اسم محفوظ ما منقرّبلو أبداً، إلا إذا الاسم «زبون XXXX» يلي نحنا حطيناه
 const BOOK_FILE = path.join(DATA_DIR, 'wa-addressbook.json');
-let book = {}; try { book = JSON.parse(fs.readFileSync(BOOK_FILE, 'utf8')); } catch {}
+let book = readJsonSafe(BOOK_FILE);
 // دمج لمرة وحدة: إذا في ملف wa-contacts-merge.json منضيف يلي ناقص منو للمحفوظ ولدفتر العناوين (ما منغيّر شي موجود) ومنعلّمو خلص
 try {
   const MF = path.join(DATA_DIR, 'wa-contacts-merge.json');
@@ -464,7 +478,7 @@ try {
     const mg = JSON.parse(fs.readFileSync(MF, 'utf8')); let a = 0, b = 0;
     for (const [k, v] of Object.entries(mg.saved || {})) if (!saved[k]) { saved[k] = v; a++; }
     for (const [k, v] of Object.entries(mg.book || {})) if (!book[k]) { book[k] = v; b++; }
-    fs.writeFileSync(SAVED_FILE, JSON.stringify(saved)); fs.writeFileSync(BOOK_FILE, JSON.stringify(book));
+    writeJsonSafe(SAVED_FILE, saved); writeJsonSafe(BOOK_FILE, book);
     fs.renameSync(MF, MF + '.done');
     console.log(`[wa] merged contacts: ${a} saved, ${b} address book`);
   }
@@ -477,7 +491,7 @@ export function noteContacts(tenantId, list) {
     const num = pn.split('@')[0].split(':')[0].replace(/\D/g, ''), nm = String(c.name || '').trim();
     if (num.length >= 8 && nm) { book[tenantId + ':' + num] = nm; n++; }
   }
-  if (n) { bookSeen += n; clearTimeout(bookT); bookT = setTimeout(() => { try { fs.writeFileSync(BOOK_FILE, JSON.stringify(book)); } catch {} }, 2000); }
+  if (n) { bookSeen += n; clearTimeout(bookT); bookT = setTimeout(() => { try { writeJsonSafe(BOOK_FILE, book); } catch {} }, 2000); }
 }
 // الاسم المحفوظ بجهات اتصالك لهالرقم (أو '' إذا مو محفوظ)
 export function bookName(tenantId, phone) {
@@ -578,7 +592,8 @@ function rememberHistory(tenantId, list) {
   clearTimeout(histT); histT = setTimeout(() => { try { fs.writeFileSync(HIST_FILE, JSON.stringify(histNums)); } catch {} console.log(`[wa] tenant ${tenantId}: ${set.size} numbers from your old chats`); }, 3000);
 }
 const bookFlag = tenantId => path.join(DATA_DIR, `wa-book-synced-${tenantId}.txt`);
-const bookReady = (tenantId) => fs.existsSync(bookFlag(tenantId)) || Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length >= 10;
+// الدفتر لازم يكون محمّل فعلاً (مو بس علامة إنو انمزامن مرة): إذا فاضي ما منلمس ولا رقم
+const bookReady = (tenantId) => Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length >= 50;
 const isPlaceholder = (n) => /^زبون \d{4}$/.test(String(n || '').trim());
 // الاسم يلي البوت بيحطو للرقم: «<البادئة> 1234». البادئة بيختارها الزبون (الافتراضي «زبون»)
 const prefixOf = tenantId => { try { return String(getTenant(tenantId)?.settings?.contacts_prefix || 'زبون').replace(/[\d\n\r]/g, '').trim().slice(0, 24) || 'زبون'; } catch { return 'زبون'; } };
@@ -697,7 +712,7 @@ setInterval(async () => {
       } catch (e) { console.error('[wa] restore contact', num, e.message); }
       await new Promise(r => setTimeout(r, 3000));
     }
-    try { fs.writeFileSync(SAVED_FILE, JSON.stringify(saved)); if (Object.keys(book).length > 50) fs.writeFileSync(BOOK_FILE, JSON.stringify(book)); } catch {}
+    try { writeJsonSafe(SAVED_FILE, saved); if (Object.keys(book).length > 50) writeJsonSafe(BOOK_FILE, book); } catch {}
     if (Object.keys(left).length) fs.writeFileSync(RESTORE, JSON.stringify(left));
     else fs.renameSync(RESTORE, RESTORE + '.done-' + Date.now());
   } catch (e) { console.error('[wa] restore', e.message); }
@@ -726,7 +741,7 @@ export async function saveContact(tenantId, phone, name, force = false) {
     s.lastSyncErr = null;
     await s.sock.addOrEditContact(num + '@s.whatsapp.net', { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true });
     if (s.lastSyncErr) { const e = s.lastSyncErr; s.lastSyncErr = null; fixContactsState(tenantId).catch(() => {}); throw new Error(`WhatsApp rejected it (${e.code} ${e.text})`); }
-    saved[key] = full; book[key] = full; for (const mm of bulk.values()) mm.delete(num); /* انحفظ: منشيلو من الطابور */ clearTimeout(savedT); savedT = setTimeout(() => { try { fs.writeFileSync(SAVED_FILE, JSON.stringify(saved)); fs.writeFileSync(BOOK_FILE, JSON.stringify(book)); } catch {} }, 1500);
+    saved[key] = full; book[key] = full; for (const mm of bulk.values()) mm.delete(num); /* انحفظ: منشيلو من الطابور */ clearTimeout(savedT); savedT = setTimeout(() => { try { writeJsonSafe(SAVED_FILE, saved); writeJsonSafe(BOOK_FILE, book); } catch {} }, 1500);
     console.log(`[wa] tenant ${tenantId}: contact ${num} ${have ? `«${have}» → ` : 'new → '}«${full}»`);
     return true;
   } catch (e) { console.error('[wa] save contact', num, e.message); return false; }
