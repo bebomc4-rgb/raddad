@@ -32,14 +32,16 @@ function fresh(ts, nonce) {
 
 // «سجّل بالواتساب»: الموقع بيفتح رمز (KO-XXXXXX)، الزبون بيبعتو من واتسابو لرقم المتجر، فمنعرف رقمو أكيد
 const open = new Map(); // رمز → { at, phone }
-setInterval(() => { const n = Date.now(); for (const [k, v] of open) if (n - v.at > 20 * 60_000) open.delete(k); }, 120_000).unref();
+const early = new Map(); // رمز وصل بالواتساب قبل ما الموقع يلحق يفتحو (ثواني) → { at, phone }
+setInterval(() => { const n = Date.now(); for (const [k, v] of open) if (n - v.at > 20 * 60_000) open.delete(k); for (const [k, v] of early) if (n - v.at > 2 * 60_000) early.delete(k); }, 60_000).unref();
 export async function koOpen(body) {
   const { t, ts, nonce, sig } = body || {};
   need(/^[A-Z0-9]{6}$/.test(t || ''), 400, 'رمز غلط'); fresh(ts, nonce);
   need(await verify(`open|${t}|${ts}|${nonce}`, sig), 403, 'توقيع غلط');
   seen.set(nonce, Date.now());
   need(open.size < 5000, 429, 'كتير');
-  if (!open.has(t)) open.set(t, { at: Date.now(), phone: '' });
+  if (!open.has(t)) open.set(t, { at: Date.now(), phone: early.get(t)?.phone || '' });
+  early.delete(t);
   return { ok: true };
 }
 export async function koClaim(body) {
@@ -55,7 +57,7 @@ export function waClaim(text, phone) {
   const m = String(text || '').toUpperCase().match(/KO-([A-Z0-9]{6})\b/);
   if (!m || !phone) return false;
   const o = open.get(m[1]);
-  if (!o) return false;
+  if (!o) { if (early.size < 2000 && /تأكيد حسابي|دخول لحسابي/.test(String(text))) { early.set(m[1], { at: Date.now(), phone }); return true; } return false; }
   if (!o.phone) o.phone = phone;
   return true;
 }
