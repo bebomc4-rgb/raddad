@@ -281,6 +281,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
           if (!phone) rememberLid(tenantId, jid);
         }
         // «سجّل بالواتساب» بموقع KO SPORT: الزبون بعت رمز التأكيد. منأكّد رقمو ومنردّ عليه، والبوت ما بيرد على هالرسالة
+        if (!m.key.fromMe && text && /KO-[A-Z0-9]{6}/i.test(text)) console.log(`[ko-otp] tenant ${tenantId}: WhatsApp message with a code from ${phone || jid} (active=${isActive()}, koTenant=${Number(tenantId) === KO_TENANT})`);
         if (!m.key.fromMe && phone && text && Number(tenantId) === KO_TENANT && /KO-[A-Z0-9]{6}/i.test(text)) {
           const { waClaim, holdForLater } = await import('../otp.js');
           if (!isActive()) { holdForLater({ tenantId, jid, phone, text }); continue; } // الجهاز التاني هوي يلي بيرد هلق
