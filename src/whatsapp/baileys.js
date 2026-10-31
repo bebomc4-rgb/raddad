@@ -667,6 +667,32 @@ async function auditContactsRun(tenantId, req) {
 const FROZEN = path.join(DATA_DIR, 'contacts-frozen');
 try { if (!fs.existsSync(path.join(DATA_DIR, 'contacts-unfrozen-by-owner'))) fs.writeFileSync(FROZEN, new Date().toISOString()); } catch {}
 const frozen = () => { try { return fs.existsSync(FROZEN); } catch { return true; } };
+// إرجاع الأسماء يلي انغيّرت غلط: data/contacts-restore.json = { "1:9639…": "الاسم الأصلي" }.
+// بيرجّع كل اسم لجهات الاتصال (حتى والحفظ مجمّد)، رقم كل 3 ثواني، وبعدين بيسمّي الملف .done
+const RESTORE = path.join(DATA_DIR, 'contacts-restore.json');
+let restoring = false;
+setInterval(async () => {
+  if (restoring || !fs.existsSync(RESTORE) || !isActive()) return;
+  restoring = true;
+  try {
+    const list = JSON.parse(fs.readFileSync(RESTORE, 'utf8')), left = { ...list };
+    for (const [k, name] of Object.entries(list)) {
+      const [tid, num] = k.split(':'), st = sessions.get(Number(tid));
+      if (!st?.sock?.addOrEditContact || st.status !== 'open') continue;
+      try {
+        await st.sock.addOrEditContact(num + '@s.whatsapp.net', { fullName: name, firstName: String(name).split(' ')[0], saveOnPrimaryAddressbook: true });
+        saved[k] = name; book[k] = name; delete left[k];
+        console.log(`[wa] tenant ${tid}: contact ${num} restored → «${name}»`);
+      } catch (e) { console.error('[wa] restore contact', num, e.message); }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    try { fs.writeFileSync(SAVED_FILE, JSON.stringify(saved)); if (Object.keys(book).length > 50) fs.writeFileSync(BOOK_FILE, JSON.stringify(book)); } catch {}
+    if (Object.keys(left).length) fs.writeFileSync(RESTORE, JSON.stringify(left));
+    else fs.renameSync(RESTORE, RESTORE + '.done-' + Date.now());
+  } catch (e) { console.error('[wa] restore', e.message); }
+  restoring = false;
+}, 30_000).unref();
+
 export async function saveContact(tenantId, phone, name, force = false) {
   if (frozen()) return false;
   if (!isActive() || !contactsOn(tenantId)) return false;
