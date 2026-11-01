@@ -38,14 +38,32 @@ async function lib() {
 const silent = { level: 'silent', trace() {}, debug() {}, info() {}, warn() {}, error() {}, fatal() {}, child() { return silent; } };
 const authDir = id => path.join(DATA_DIR, 'wa-sessions', String(id));
 // الرقم مربوط فعلاً إذا ملف الاعتماد فيه هوية الحساب (me)
-const hasAuth = id => {
-  try { return !!JSON.parse(fs.readFileSync(path.join(authDir(id), 'creds.json'), 'utf8')).me; } catch { return false; }
-};
+// 1 تشرين التاني 2026: إعادة تشغيل بنص الكتابة فضّت creds.json (0 بايت) وفصلت الواتس. هلق:
+//  - بعد كل حفظ منعمل نسخة سليمة creds.json.bak
+//  - إذا creds.json خربان والنسخة سليمة، منرجّعها لحالها قبل ما نفتح الواتس
+//  - وقت الإيقاف منستنى آخر حفظ يخلص (stopAll)
+const credsOk = f => { try { return !!JSON.parse(fs.readFileSync(f, 'utf8')).me; } catch { return false; } };
+function repairCreds(id) {
+  const f = path.join(authDir(id), 'creds.json'), b = f + '.bak';
+  if (credsOk(f)) return true;
+  if (credsOk(b)) { try { fs.copyFileSync(b, f); console.log(`[wa] tenant ${id}: creds.json was broken — restored from the last good copy`); return true; } catch (e) { console.error('[wa] repair creds', e.message); } }
+  return false;
+}
+const hasAuth = id => repairCreds(id);
+const pendingSaves = new Set();
 
 export function status(tenantId) {
   const s = sessions.get(tenantId);
   if (!s) return { provider: 'qr', status: hasAuth(tenantId) ? 'connecting' : 'disconnected' };
   return { provider: 'qr', status: s.status, qr: s.qr || null, code: s.code || null, phone: s.phone || null, error: s.error || null };
+}
+
+// الإيقاف (تحديث/إعادة تشغيل): منستنى الحفظ يخلص، منسكّر الجلسات بهدوء (بلا ما نعمل logout)
+export async function stopAll(ms = 4000) {
+  for (const s of sessions.values()) s.stopped = true;
+  await Promise.race([Promise.allSettled([...pendingSaves]), new Promise(r => setTimeout(r, ms))]);
+  for (const s of sessions.values()) { try { s.sock?.end(undefined); } catch {} }
+  await Promise.race([Promise.allSettled([...pendingSaves]), new Promise(r => setTimeout(r, 1500))]);
 }
 
 // كل الجلسات (للتشخيص)
@@ -68,6 +86,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
   emit(tenantId, 'wa', status(tenantId));
 
   fs.mkdirSync(authDir(tenantId), { recursive: true });
+  repairCreds(tenantId);
   const { state, saveCreds } = await useMultiFileAuthState(authDir(tenantId));
   let version;
   try {
@@ -88,7 +107,14 @@ export async function start(tenantId, { pairPhone = null } = {}) {
     getMessage: async () => undefined
   });
   s.sock = sock;
-  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('creds.update', (...a) => {
+    const p = (async () => {
+      await saveCreds(...a);
+      const f = path.join(authDir(tenantId), 'creds.json');
+      try { const t = fs.readFileSync(f, 'utf8'); if (JSON.parse(t).me) { fs.writeFileSync(f + '.bak.tmp', t); fs.renameSync(f + '.bak.tmp', f + '.bak'); } } catch {}
+    })().catch(e => console.error('[wa] save creds', e.message)).finally(() => pendingSaves.delete(p));
+    pendingSaves.add(p);
+  });
   sock.ev.on('contacts.upsert', (list) => noteContacts(tenantId, list));
   sock.ev.on('contacts.update', (list) => noteContacts(tenantId, (list || []).filter(c => c.name)));
   // نسخة واتساب ويب: الأسماء والمحادثات

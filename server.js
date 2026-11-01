@@ -235,5 +235,12 @@ server.listen(config.port, config.host, () => {
   startPrimaryWatch(() => startTunnel(config.port).catch(e => console.error('[link]', e.message)));
 });
 
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { console.log('إيقاف...'); server.close(); process.exit(0); });
+// الإيقاف بهدوء: منستنى حفظ ملفات الواتس يخلص قبل ما نطلع (الطلعة الفورية فضّت creds.json مرة)
+let stopping = false;
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => {
+  if (stopping) return; stopping = true;
+  console.log('إيقاف...'); server.close();
+  try { const B = await import('./src/whatsapp/baileys.js'); await B.stopAll(4000); } catch (e) { console.error('[stop]', e.message); }
+  process.exit(0);
+});
 process.on('unhandledRejection', e => console.error('[unhandled]', e?.message || e));
