@@ -78,6 +78,26 @@ const server = http.createServer(async (req, res) => {
 
     // مين شغّال هلق (الكمبيوتر ولا الموبايل الاحتياط) — بيسألو الموبايل كل 30 ثانية
     if (pathname === '/api/whoami') return json(res, 200, { ...failoverStatus(), version: CODE_VERSION });
+    // سجل السيرفر مشفّر (لحتى المساعد يقرا السجل بلا ما صاحب المتجر يكتب أوامر): مشفّر بالمفتاح العام deploy/diag.pub.pem،
+    // ما حدا بيقدر يقراه غير يلي معو المفتاح الخاص. GitHub بيجيبو بعد كل تعديل
+    if (pathname === '/api/diag') {
+      const now = Date.now();
+      if (now - (globalThis.__diagAt || 0) < 10_000) return json(res, 429, { error: 'wait' });
+      globalThis.__diagAt = now;
+      try {
+        const tail = (f, n) => { try { const t = fs.readFileSync(path.join(DATA_DIR, f), 'utf8'); return t.split('\n').slice(-n).join('\n'); } catch { return ''; } };
+        const os = await import('node:os');
+        const B = await import('./src/whatsapp/baileys.js').catch(() => ({}));
+        let wa = null; try { wa = typeof B.statusAll === 'function' ? B.statusAll() : null; } catch {}
+        const body = JSON.stringify({ at: new Date().toISOString(), version: CODE_VERSION, who: failoverStatus(), uptime: Math.round(process.uptime()), mem: { rss: Math.round(process.memoryUsage().rss / 1048576), free: Math.round(os.freemem() / 1048576), total: Math.round(os.totalmem() / 1048576) }, load: os.loadavg(), wa, update: tail('update.log', 10), log: tail('server.log', 400) });
+        const pub = fs.readFileSync(path.join(ROOT, 'deploy', 'diag.pub.pem'), 'utf8');
+        const key = crypto.randomBytes(32), iv = crypto.randomBytes(12);
+        const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+        const enc = Buffer.concat([c.update(body, 'utf8'), c.final()]);
+        const ek = crypto.publicEncrypt({ key: pub, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, key);
+        return json(res, 200, { k: ek.toString('base64'), iv: iv.toString('base64'), tag: c.getAuthTag().toString('base64'), d: enc.toString('base64') });
+      } catch (e) { return json(res, 500, { error: e.message }); }
+    }
     // GitHub بيدق هون بعد كل تعديل (.github/workflows/deploy.yml) → السيرفر بيسحب التعديل فوراً بدل ما يستنّى.
     // ما فيه سر: كل يلي بيعملو إنو السيرفر بيسأل GitHub إذا في جديد (مرة كل 15 ثانية بالأكتر)
     if (pathname === '/api/deploy-hook') {

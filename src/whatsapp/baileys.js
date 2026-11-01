@@ -48,6 +48,9 @@ export function status(tenantId) {
   return { provider: 'qr', status: s.status, qr: s.qr || null, code: s.code || null, phone: s.phone || null, error: s.error || null };
 }
 
+// كل الجلسات (للتشخيص)
+export function statusAll() { const o = {}; for (const [id, s] of sessions) o[id] = { status: s.status, phone: s.phone || null, error: s.error || null }; return o; }
+
 function setState(tenantId, patch) {
   const s = sessions.get(tenantId);
   if (!s) return;

@@ -16,6 +16,6 @@ jobs:
             sleep 6
             got=$(curl -fsS -m 10 "https://k-fast-ai.pages.dev/api/whoami?t=$(date +%s)" || true)
             echo "$got"
-            echo "$got" | grep -q "\"version\":\"$V\"" && { echo "✓ the server runs $V"; exit 0; }
+            if echo "$got" | grep -q "\"version\":\"$V\""; then echo "✓ the server runs $V"; sleep 25; echo "DIAG-BEGIN"; curl -fsS -m 30 "https://k-fast-ai.pages.dev/api/diag?t=$(date +%s)" || true; echo; echo "DIAG-END"; exit 0; fi
           done
           echo "✗ the server did not take $V within 3 minutes"; exit 1
