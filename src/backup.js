@@ -59,11 +59,13 @@ export async function runBackup() {
 
 export function startBackups() {
   backupKey();
+  let first = true;
   const tick = () => {
     const st = backupStatus(), last = st.ok && st.at ? Date.parse(st.at) : 0;
     const hour = new Date(Date.now() + 3 * 3600_000).getUTCHours();
-    const failedRecently = st.failed_at && Date.now() - Date.parse(st.failed_at) < 30 * 60_000;
+    const failedRecently = !first && st.failed_at && Date.now() - Date.parse(st.failed_at) < 30 * 60_000;
     if ((Date.now() - last > 24 * 3600_000 || (hour === 4 && Date.now() - last > 20 * 3600_000)) && !failedRecently) runBackup();
+    first = false;
   };
   setTimeout(tick, 2 * 60_000);
   setInterval(tick, 15 * 60_000).unref();
