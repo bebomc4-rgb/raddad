@@ -2,7 +2,16 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
+import path from 'node:path';
 import { isActive } from './failover.js';
+import { DATA_DIR } from './config.js';
+
+// سجل فترات الضغط: إيمتى بلّش، إيمتى خلص، وأعلى رقم وصلو
+const LOG = path.join(DATA_DIR, 'health-log.json');
+let episodes = []; try { episodes = JSON.parse(fs.readFileSync(LOG, 'utf8')); } catch {}
+const saveLog = () => { try { fs.writeFileSync(LOG, JSON.stringify(episodes.slice(-200))); } catch {} };
+let cur = null; // الفترة الحالية إذا في ضغط هلق
+export const pressureLog = () => [...episodes].reverse().slice(0, 30);
 
 const lag = monitorEventLoopDelay({ resolution: 20 }); lag.enable();
 function mem() {
@@ -22,19 +31,30 @@ export async function health() {
   let level = 'ok', say = 'السيرفر مرتاح 👌';
   if (memPct >= 80 || cpuPct >= 150 || m.swapUsed > 800e6 || lagMs > 500) { level = 'bad'; say = 'في ضغط! كبّر السيرفر هلق (من لوحة الشركة ← Upgrade).'; }
   else if (memPct >= 65 || cpuPct >= 100 || m.swapUsed > 300e6 || lagMs > 200) { level = 'warn'; say = 'قرّب من الحد، فكّر تكبّر قريباً.'; }
-  return { level, say, memPct, memUsed: m.used, memTotal: m.total, swapUsed: m.swapUsed, swapTotal: m.swapTotal, cpuPct, cores, lagMs, stores, room, uptime: Math.round(os.uptime()) };
+  return { log: pressureLog(), now: cur, level, say, memPct, memUsed: m.used, memTotal: m.total, swapUsed: m.swapUsed, swapTotal: m.swapTotal, cpuPct, cores, lagMs, stores, room, uptime: Math.round(os.uptime()) };
 }
-// كل دقيقتين؛ إذا الضغط ضل 3 مرات ورا بعض → رسالة واتساب إلك (مرة كل 6 ساعات بالكتير)
-let bad = 0, lastAlert = 0;
+// كل دقيقة منسجّل: إذا في ضغط بتنفتح «فترة»، ولما يروح الضغط بتتسكّر ومنحسب قديش طوّلت
+// إذا الضغط ضل 6 دقايق → رسالة واتساب إلك (مرة كل 6 ساعات بالكتير)، ولما يخلص رسالة «خلص الضغط بعد كذا دقيقة»
+const dmTime = t => new Date(t).toLocaleString('ar-SY', { timeZone: 'Asia/Damascus', hour: 'numeric', minute: '2-digit', day: 'numeric', month: 'numeric' });
+let lastAlert = 0;
 setInterval(async () => {
   if (!isActive()) return;
   try {
-    const h = await health();
-    bad = h.level === 'ok' ? 0 : bad + 1;
-    if (bad >= 3 && Date.now() - lastAlert > 6 * 3600_000) {
-      lastAlert = Date.now();
-      const { notifyAdmin } = await import('./notify.js');
-      await notifyAdmin(`⚠️ سيرفر K FAST AI: ${h.say}\nالرام ${h.memPct}% · المعالج ${h.cpuPct}% · المتاجر المربوطة ${h.stores}`);
+    const h = await health(), now = Date.now();
+    if (h.level !== 'ok') {
+      if (!cur) { cur = { start: now, end: null, level: h.level, peakMem: h.memPct, peakCpu: h.cpuPct, stores: h.stores }; episodes.push(cur); }
+      cur.end = now; if (h.level === 'bad') cur.level = 'bad';
+      cur.peakMem = Math.max(cur.peakMem, h.memPct); cur.peakCpu = Math.max(cur.peakCpu, h.cpuPct); cur.stores = Math.max(cur.stores, h.stores);
+      cur.minutes = Math.round((now - cur.start) / 60000); saveLog();
+      if (cur.minutes >= 6 && !cur.alerted && now - lastAlert > 6 * 3600_000) {
+        lastAlert = now; cur.alerted = true; saveLog();
+        const { notifyAdmin } = await import('./notify.js');
+        await notifyAdmin(`⚠️ سيرفر K FAST AI: ${h.say}\nبلّش الضغط الساعة ${dmTime(cur.start)} وصرلو ${cur.minutes} دقيقة\nالرام ${h.memPct}% · المعالج ${h.cpuPct}% · المتاجر ${h.stores}`);
+      }
+    } else if (cur) {
+      const done = cur; cur = null;
+      done.end = now; done.minutes = Math.max(1, Math.round((now - done.start) / 60000)); saveLog();
+      if (done.alerted) { const { notifyAdmin } = await import('./notify.js'); await notifyAdmin(`✅ خلص الضغط عالسيرفر. بلّش ${dmTime(done.start)} وطوّل ${done.minutes} دقيقة (أعلى رام ${done.peakMem}%).`); }
     }
   } catch {}
-}, 120_000).unref();
+}, 60_000).unref();

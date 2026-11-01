@@ -28,7 +28,9 @@ export async function overview(view) {
         <div class="stack-sm"><span class="small">المعالج: <b class="num">${hl.cpuPct}%</b> (${hl.cores} نوى)</span>${bar(hl.cpuPct / 1.5, hl.cpuPct >= 150 ? 'bad' : hl.cpuPct >= 100 ? 'warn' : 'ok')}</div>
         <div class="stack-sm"><span class="small">المتاجر المربوطة: <b class="num">${hl.stores}</b></span><span class="tiny faint">بيساع تقريباً <b>${hl.room}</b> متجر كمان قبل ما تكبّر</span></div>
         <div class="stack-sm"><span class="small">سرعة الرد: <b class="num">${hl.lagMs}ms</b> تأخير</span><span class="tiny faint">${hl.swapUsed > 0 ? `ذاكرة احتياطية: ${GB(hl.swapUsed)} GB` : 'ما في استعمال للذاكرة الاحتياطية'}</span></div>
-      </div><span class="tiny faint">إذا صار ضغط 6 دقايق ورا بعض بيوصلك تنبيه عالواتس لحالو.</span></div>` : '';
+      </div><span class="tiny faint">إذا صار ضغط 6 دقايق ورا بعض بيوصلك تنبيه عالواتس لحالو.</span>
+      <details${hl.log && hl.log.length ? '' : ' hidden'}><summary class="small"><b>سجل الضغط</b> (${hl.log ? hl.log.length : 0} مرة)</summary>
+        <div class="list" style="margin-top:8px">${(hl.log || []).map(e => html`<div class="item"><span class="pill ${e.level === 'bad' ? 'bad' : 'warn'}">${e.level === 'bad' ? 'ضغط' : 'قرّب'}</span><span class="grow small">${new Date(e.start).toLocaleString('ar-SY', { timeZone: 'Asia/Damascus', weekday: 'short', day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' })} · طوّل <b>${e.minutes || 1}</b> دقيقة${e === (hl.now || {}) || (hl.now && hl.now.start === e.start) ? ' (لسا مستمر)' : ''}</span><span class="tiny faint">أعلى رام ${e.peakMem}% · معالج ${e.peakCpu}% · ${e.stores} متجر</span></div>`)}</div></details></div>` : '';
   view.html(html`<div class="stack">
     ${hcard}
     <div class="grid g4">${tiles.map(([k, v, s, i, c, h]) => html`<a class="card stat" href="#${h}"><span class="row between"><span class="k">${k}</span><span class="ico ${c}" style="width:34px;height:34px">${ic(i)}</span></span><span class="v num">${typeof v === 'number' ? n(v) : v}</span>${s ? html`<span class="tiny faint">${s}</span>` : ''}</a>`)}</div>
