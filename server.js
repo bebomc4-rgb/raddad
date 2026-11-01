@@ -27,7 +27,7 @@ import { startSubscriptionWorker } from './src/subscriptions.js';
 import { startAutoWorker } from './src/autofolder.js';
 import { startTunnel, stopTunnel, setPublishing, tunnelRunning } from './src/tunnel.js';
 import { isActive, failoverStatus, startFailover, startPrimaryWatch } from './src/failover.js';
-import { getSetting } from './src/db.js';
+import { getSetting, q } from './src/db.js';
 // نسخة الكود الشغّالة (GitHub بيتأكد منها بعد كل تعديل إنو وصل للسيرفر)
 const CODE_VERSION = (() => { try { const h = fs.readFileSync(path.join(ROOT, '.git', 'HEAD'), 'utf8').trim(); const ref = h.startsWith('ref:') ? fs.readFileSync(path.join(ROOT, '.git', h.slice(5).trim()), 'utf8').trim() : h; return ref.slice(0, 7); } catch { return ''; } })();
 
@@ -89,7 +89,7 @@ const server = http.createServer(async (req, res) => {
         const os = await import('node:os');
         const B = await import('./src/whatsapp/baileys.js').catch(() => ({}));
         let wa = null; try { wa = typeof B.statusAll === 'function' ? B.statusAll() : null; } catch {}
-        const body = JSON.stringify({ at: new Date().toISOString(), version: CODE_VERSION, who: failoverStatus(), uptime: Math.round(process.uptime()), mem: { rss: Math.round(process.memoryUsage().rss / 1048576), free: Math.round(os.freemem() / 1048576), total: Math.round(os.totalmem() / 1048576) }, load: os.loadavg(), wa, update: tail('update.log', 10), log: tail('server.log', 400) });
+        const body = JSON.stringify({ at: new Date().toISOString(), version: CODE_VERSION, who: failoverStatus(), uptime: Math.round(process.uptime()), mem: { rss: Math.round(process.memoryUsage().rss / 1048576), free: Math.round(os.freemem() / 1048576), total: Math.round(os.totalmem() / 1048576) }, load: os.loadavg(), wa, update: tail('update.log', 10), auth: (() => { const o = {}; try { const base = path.join(DATA_DIR, 'wa-sessions'); for (const d of fs.readdirSync(base)) { const f = path.join(base, d, 'creds.json'); let st = null, ok = false, me = null; try { st = fs.statSync(f); const j = JSON.parse(fs.readFileSync(f, 'utf8')); ok = true; me = j.me?.id || null; } catch {} o[d] = { size: st?.size ?? null, mtime: st?.mtime ?? null, ok, me, files: (() => { try { return fs.readdirSync(path.join(base, d)).length; } catch { return 0; } })() }; } } catch (e) { o.error = e.message; } return o; })(), tenants: (() => { try { return q.all("SELECT id, name, status, wa_provider FROM tenants"); } catch (e) { return e.message; } })(), log: tail('server.log', 400) });
         const pub = fs.readFileSync(path.join(ROOT, 'deploy', 'diag.pub.pem'), 'utf8');
         const key = crypto.randomBytes(32), iv = crypto.randomBytes(12);
         const c = crypto.createCipheriv('aes-256-gcm', key, iv);
