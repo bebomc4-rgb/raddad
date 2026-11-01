@@ -76,6 +76,13 @@ const server = http.createServer(async (req, res) => {
 
     // مين شغّال هلق (الكمبيوتر ولا الموبايل الاحتياط) — بيسألو الموبايل كل 30 ثانية
     if (pathname === '/api/whoami') return json(res, 200, failoverStatus());
+    // GitHub بيدق هون بعد كل تعديل (.github/workflows/deploy.yml) → السيرفر بيسحب التعديل فوراً بدل ما يستنّى.
+    // ما فيه سر: كل يلي بيعملو إنو السيرفر بيسأل GitHub إذا في جديد (مرة كل 15 ثانية بالأكتر)
+    if (pathname === '/api/deploy-hook') {
+      const now = Date.now();
+      if (now - (globalThis.__deployHookAt || 0) > 15_000) { globalThis.__deployHookAt = now; try { fs.writeFileSync(path.join(DATA_DIR, 'update-now'), String(now)); } catch (e) { console.error('[deploy-hook]', e.message); } console.log(`[deploy-hook] ${new Date().toISOString()} GitHub says there is an update`); }
+      return json(res, 200, { ok: true });
+    }
     // الموبايل الاحتياط بياخد من الكمبيوتر آخر المنتجات والإعدادات (بمفتاح سري بيعرفو الجهازين بس)
     if (pathname === '/api/sync/export') {
       const S = await import('./src/sync.js');

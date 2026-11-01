@@ -1,0 +1,14 @@
+name: deploy to server
+on:
+  push:
+    branches: [main]
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: tell the server there is an update
+        run: |
+          for u in https://k-fast-ai.pages.dev https://k-fast-ai.sfa7al3asme.workers.dev; do
+            curl -fsS -m 20 "$u/api/deploy-hook?t=$(date +%s)" && exit 0 || true
+          done
+          echo "server did not answer (it updates by itself within a minute)"

@@ -83,4 +83,5 @@ U
 systemctl daemon-reload
 systemctl enable raddad raddad-update.timer >/dev/null
 systemctl start raddad-update.timer
-echo "✓ السيرفر جاهز، ناطر البيانات من الموبايل"
+bash /opt/raddad/deploy/server-fast-update.sh || true
+echo "✓ السيرفر جاهز، ناطر البيانات"
