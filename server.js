@@ -1,4 +1,5 @@
 // ردّاد — منصة وكيل مبيعات ذكي على واتساب
+import './src/off-guard.js'; // لازم يضل أول سطر: الكمبيوتر/الموبايل ما بيشتغلوا بعد ما انتقل المجيب للسيرفر
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
