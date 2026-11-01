@@ -2,6 +2,14 @@
 # بيشتغل على السيرفر (Ubuntu) كـ root: بيجهّز ردّاد بس ما بيشغّلو لحتى توصل البيانات من الموبايل
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+# سيرفر صغير (1GB متل Oracle Micro): منضيف ذاكرة احتياطية 3GB على الديسك لحتى ما يوقف
+if [ "$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)" -lt 2500 ] && ! swapon --show | grep -q /swapfile; then
+  echo "==> ذاكرة احتياطية 3GB"
+  fallocate -l 3G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=3072
+  chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  grep -q /swapfile /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  sysctl -w vm.swappiness=20 >/dev/null; grep -q swappiness /etc/sysctl.conf || echo 'vm.swappiness=20' >> /etc/sysctl.conf
+fi
 echo "==> تنصيب Node.js 22 و git و cloudflared"
 apt-get update -y
 apt-get install -y ca-certificates curl gnupg git
