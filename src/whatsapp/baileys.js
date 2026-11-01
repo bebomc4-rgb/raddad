@@ -721,6 +721,23 @@ const frozen = () => { try { return fs.existsSync(FROZEN) && !fs.existsSync(CONT
 // بيرجّع كل اسم لجهات الاتصال (حتى والحفظ مجمّد)، رقم كل 3 ثواني، وبعدين بيسمّي الملف .done
 const RESTORE = path.join(DATA_DIR, 'contacts-restore.json');
 let restoring = false;
+// تراجع تلقائي: أي اسم حقيقي السجل بيقول إنو انقلب «زبون XXXX» بيرجع لاسمو (مرة وحدة، من سجل السيرفر نفسو)
+try {
+  const mark = path.join(DATA_DIR, 'contacts-undo-log.done');
+  if (!fs.existsSync(mark)) {
+    const log = fs.readFileSync(path.join(DATA_DIR, 'server.log'), 'utf8'), undo = {};
+    for (const m of log.matchAll(/\[wa\] tenant (\d+): contact (\d+) «([^»]+)» → «([^»]+)»/g)) {
+      const [, tid, num, from, to] = m;
+      if (!/^\S+ \d{4}$/.test(from) && /^\S+ \d{4}$/.test(to)) undo[`${tid}:${num}`] = from;
+    }
+    if (Object.keys(undo).length) {
+      let cur = {}; try { cur = JSON.parse(fs.readFileSync(RESTORE, 'utf8')); } catch {}
+      fs.writeFileSync(RESTORE, JSON.stringify({ ...cur, ...undo }));
+      console.log(`[wa] undo: ${Object.keys(undo).length} saved name(s) that were changed by mistake will be put back`);
+    }
+    fs.writeFileSync(mark, new Date().toISOString());
+  }
+} catch (e) { console.error('[wa] undo renames', e.message); }
 setInterval(async () => {
   if (restoring || !fs.existsSync(RESTORE) || !isActive()) return;
   restoring = true;
@@ -758,7 +775,7 @@ export async function saveContact(tenantId, phone, name, force = false) {
     // محفوظ عندك باسم: ما منغيّرو أبداً. بس إذا الاسم «زبون XXXX» ومنعرف الاسم الحقيقي، منبدّلو
     if (have === real) return true;
     // القاعدة المطلقة (صاحب المتجر): أي اسم حقيقي محفوظ ما بيتغيّر أبداً، مين ما كان حاططو. بيتغيّر بس «زبون XXXX» لاسم كتبو الزبون نفسو
-    // (1 تشرين التاني: «علي صالح» انقلب «زبون 1350» لأنو كان في استثناء هون للأسماء يلي البوت حاططها)
+    // (1 تشرين التاني: اسم حقيقي انقلب «زبون XXXX» لأنو كان في استثناء هون للأسماء يلي البوت حاططها)
     if (!isPh(tenantId, have)) return true;
     if (isPh(tenantId, have) && !real) return true;
   }
