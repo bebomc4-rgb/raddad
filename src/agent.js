@@ -619,6 +619,12 @@ async function koAct(tenant, contact, r, order) {
     const ph = contact.phone || phoneFromJid(contact.jid), nm = realName(tenant, ph) || contact.name || '';
     notifyOwner(tenant, `📞 *زبون بدو مكالمة*\n👤 ${nm}\n📱 +${ph}\nاتصل فيه: https://wa.me/${ph}\n💬 «${lastIn.slice(0, 120)}»`).catch?.(() => {});
   }
+  // الزبون طلب رابط/تطبيق/موقع: منبعتلو رابط التطبيق بس (مو الموقع). الموديل كان يكتب «🌐 الموقع» والرابط بينشال، فيضل إيموجي لحالو
+  text = text.replace(/[ \t]*🌐[ \t]*$/gmu, '').replace(/\n{3,}/g, '\n\n').trim();
+  if (KO_APP_NOTE && ASKS_LINK.test(lastIn) && !order) {
+    text = `تكرم عينك 🙏\n📲 حمّل تطبيق *KO SPORT* وبتشوف كل المنتجات مع الأسعار:\n${KO_APP}`;
+    allNoted.set(contact.id, Date.now());
+  }
   // الزبون بعت رسالة صوتية: منرد عليه بتسجيل صوتي (وإذا ما زبط الصوت منبعت النص)
   let spoke = false;
   let voiceAll = false; try { voiceAll = !!JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'fish.json'), 'utf8')).always; } catch {}
@@ -652,6 +658,7 @@ async function koAct(tenant, contact, r, order) {
 // رابط واحد: أندرويد بيفتح Google Play مباشرة، آيفون بيفتح خطوات تثبيت التطبيق من الموقع (ko-sport.online/app)
 const KO_APP = 'https://ko-sport.online/app';
 const KO_APP_NOTE = true;
+const ASKS_LINK = /(رابط|لينك|اللينك|link|تطبيق|تطبيقكن|تطبيقكم|ابلكيشن|أبلكيشن|application|\bapp\b|ويب ?سايت|website)/i; // «موقعكن» لأ: ممكن يقصد وين المحل
 const allNoted = new Map();
 function koAllProductsNote(contactId) {
   const now = Date.now();
