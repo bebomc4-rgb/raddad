@@ -9,7 +9,11 @@ import { getSetting } from './db.js';
 export const DEVICE = process.env.DEVICE_NAME || (process.platform === 'android' ? 'phone' : 'pc');
 const pickPrimary = () => { if (['pc', 'phone'].includes(process.env.PRIMARY_DEVICE)) return process.env.PRIMARY_DEVICE; try { const v = getSetting('primary_device', 'phone'); return ['pc', 'phone'].includes(v) ? v : 'phone'; } catch { return 'phone'; } };
 export const PRIMARY = pickPrimary();
-const STANDBY = DEVICE !== PRIMARY && process.env.FAILOVER !== 'off';
+const STANDBY = DEVICE !== PRIMARY;
+// صاحب المتجر (1 تشرين التاني): الكمبيوتر مفصول عن الموبايل. الجهاز يلي مو أساسي **ما بيستلم أبداً** ولا بيبعت ولا رسالة،
+// إلا إذا انشغّل بـ FAILOVER=on (أو الملف data/backup-takeover-on موجود)
+let TAKEOVER = process.env.FAILOVER === 'on';
+try { const fs = await import('node:fs'), p = await import('node:path'), { DATA_DIR } = await import('./config.js'); if (fs.existsSync(p.join(DATA_DIR, 'backup-takeover-on'))) TAKEOVER = true; } catch {}
 let active = !STANDBY, downSince = 0;
 export const isActive = () => active;
 export const failoverStatus = () => ({ device: DEVICE, primary: PRIMARY, backup: STANDBY, active });
@@ -28,6 +32,7 @@ export async function whoIsLive(ms = 12000) {
 // على الموبايل: بيراقب الكمبيوتر وبيستلم/بيسلّم
 export function startFailover(onChange) {
   if (!STANDBY) return;
+  if (!TAKEOVER) { console.log(`[failover] this device (${NAME[DEVICE]}) is separated: it never replies or sends anything (the ${NAME[PRIMARY]} does everything)`); return; }
   console.log(`[failover] this device (${NAME[DEVICE]}) is the backup: it replies only while the ${NAME[PRIMARY]} is off`);
   // كل ثانيتين منسأل؛ إذا الكمبيوتر ما جاوب مرتين ورا بعض (والموبايل نفسو فيه نت) → الموبايل بيستلم خلال ~5 ثواني
   let busy = false, misses = 0, n = 0;
