@@ -10,10 +10,13 @@ main() {
   git fetch -q origin main || return 0
   [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] && return 0
   local OLD; OLD=$(git rev-parse HEAD:package.json)
+  local CHANGED; CHANGED=$(git diff --name-only HEAD origin/main)
   git reset -q --hard origin/main
   [ "$OLD" != "$(git rev-parse HEAD:package.json)" ] && npm install --omit=dev --no-audit --no-fund
   chown -R raddad:raddad /opt/raddad
   echo "[$(date -Is)] updated to $(git log -1 --format='%h %s')" >> /opt/raddad/data/update.log
+  # تعديلات ما بتأثر عالمجيب (طلب سجل، GitHub، ملاحظات): ما منعيد التشغيل
+  if [ -n "$CHANGED" ] && ! echo "$CHANGED" | grep -qvE '^(deploy/diag-request|\.github/|README|.*\.md$)'; then return 0; fi
   systemctl restart raddad
 }
 main "$@"; exit 0
