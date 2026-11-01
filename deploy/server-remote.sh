@@ -10,7 +10,7 @@ if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split("."
   apt-get install -y nodejs
 fi
 if ! command -v cloudflared >/dev/null; then
-  curl -fsSL -o /tmp/cf.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+  curl -fsSL -o /tmp/cf.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$(dpkg --print-architecture).deb
   apt-get install -y /tmp/cf.deb
 fi
 id raddad >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin raddad
