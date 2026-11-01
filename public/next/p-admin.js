@@ -7,7 +7,7 @@ const SVC = { contacts_new: 'أرقام جديدة', contacts_old: 'أرقام �
 
 export async function overview(view) {
   view.title('لوحة الإدارة', 'كلشي عن منصتك بلمحة');
-  const [o, pays] = await Promise.all([api('/api/admin/v2/overview'), api('/api/admin/v2/payments')]);
+  const [o, pays, hl] = await Promise.all([api('/api/admin/v2/overview'), api('/api/admin/v2/payments'), api('/api/admin/v2/health').catch(() => null)]);
   state.adminBadge = o.pending_payments; paintNav();
   const pending = pays.filter(p => ['pending', 'awaiting_delivery'].includes(p.status)).slice(0, 5);
   const tiles = [
@@ -20,7 +20,17 @@ export async function overview(view) {
     ['أرقام قديمة (مباعة)', o.contacts_old, '', 'history', 'gold', '/admin/subscribers'],
     ['رسائل اليوم', o.msgs_today, `${n(o.ai_today)} رد ذكي`, 'chat', 'blue', '/admin']
   ];
+  const GB = b => (b / 1073741824).toFixed(1);
+  const bar = (pct, lvl) => html`<div style="height:10px;border-radius:99px;background:var(--line,#eee);overflow:hidden"><div style="height:100%;width:${Math.min(100, pct)}%;background:${lvl === 'bad' ? '#e5484d' : lvl === 'warn' ? '#f5a524' : '#30a46c'}"></div></div>`;
+  const hcard = hl ? html`<div class="card pad-lg stack-sm"><div class="card-h"><h3>${ic('chart')} حالة السيرفر</h3><span class="pill ${hl.level === 'bad' ? 'bad' : hl.level === 'warn' ? 'warn' : 'ok'}">${hl.say}</span></div>
+      <div class="grid g4">
+        <div class="stack-sm"><span class="small">الرام: <b class="num">${hl.memPct}%</b> (${GB(hl.memUsed)} من ${GB(hl.memTotal)} GB)</span>${bar(hl.memPct, hl.memPct >= 80 ? 'bad' : hl.memPct >= 65 ? 'warn' : 'ok')}</div>
+        <div class="stack-sm"><span class="small">المعالج: <b class="num">${hl.cpuPct}%</b> (${hl.cores} نوى)</span>${bar(hl.cpuPct / 1.5, hl.cpuPct >= 150 ? 'bad' : hl.cpuPct >= 100 ? 'warn' : 'ok')}</div>
+        <div class="stack-sm"><span class="small">المتاجر المربوطة: <b class="num">${hl.stores}</b></span><span class="tiny faint">بيساع تقريباً <b>${hl.room}</b> متجر كمان قبل ما تكبّر</span></div>
+        <div class="stack-sm"><span class="small">سرعة الرد: <b class="num">${hl.lagMs}ms</b> تأخير</span><span class="tiny faint">${hl.swapUsed > 0 ? `ذاكرة احتياطية: ${GB(hl.swapUsed)} GB` : 'ما في استعمال للذاكرة الاحتياطية'}</span></div>
+      </div><span class="tiny faint">إذا صار ضغط 6 دقايق ورا بعض بيوصلك تنبيه عالواتس لحالو.</span></div>` : '';
   view.html(html`<div class="stack">
+    ${hcard}
     <div class="grid g4">${tiles.map(([k, v, s, i, c, h]) => html`<a class="card stat" href="#${h}"><span class="row between"><span class="k">${k}</span><span class="ico ${c}" style="width:34px;height:34px">${ic(i)}</span></span><span class="v num">${typeof v === 'number' ? n(v) : v}</span>${s ? html`<span class="tiny faint">${s}</span>` : ''}</a>`)}</div>
     <div class="grid g2">
       <div class="card pad-lg"><div class="card-h"><h3>${ic('clock')} طلبات دفع ناطرة</h3><a class="linkish small" href="#/admin/payments">الكل</a></div>

@@ -187,6 +187,7 @@ server.listen(config.port, config.host, () => {
     } catch (e) { console.error('[update]', e.message); }
   }
   import('./src/sitesync.js').then(m => m.startSiteSync()).catch(e => console.error('[site]', e.message));
+  import('./src/health.js').catch(e => console.error('[health]', e.message));
   Promise.all([import('./src/stories.js'), import('./src/routes-v2.js')]).then(([S, R]) => S.startStories(tid => isActive() && R.responderUnlocked(tid))).catch(e => console.error('[stories]', e.message));
   // الموبايل الاحتياط ما بيوجّه الرابط العام لعندو إلا لما يستلم (الكمبيوتر وقف)
   // الأساسي: قبل ما ياخد الرابط، إذا الجهاز التاني هوي الشغّال هلق منسحب منو آخر البيانات (الحسابات، الاشتراكات…) لحتى ما يضيع شي

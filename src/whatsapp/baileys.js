@@ -825,6 +825,7 @@ export async function logout(tenantId) {
   emit(tenantId, 'wa', status(tenantId));
 }
 
+export const openCount = () => [...sessions.values()].filter(s => s.status === 'open').length;
 export function stop(tenantId) {
   const s = sessions.get(tenantId);
   if (s) { s.stopped = true; try { s.sock?.end(undefined); } catch {} }

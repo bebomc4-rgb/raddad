@@ -462,6 +462,7 @@ r.get('/api/admin/v2/services', ctx => { sup(ctx); return listServices({ all: tr
 r.put('/api/admin/v2/services', ctx => { sup(ctx); saveServices(ctx.body.services); return listServices({ all: true }); });
 
 // ===== لوحة الأرباح =====
+r.get('/api/admin/v2/health', async ctx => { sup(ctx); return (await import('./health.js')).health(); });
 r.get('/api/admin/v2/revenue', async ctx => {
   sup(ctx);
   const N = await import('./notify.js');
