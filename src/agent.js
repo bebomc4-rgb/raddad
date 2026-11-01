@@ -485,7 +485,7 @@ ${prevOrders[0] && (prevOrders[0].customer_name || prevOrders[0].address) ? `- �
 ## قائمة الأقسام
 - إذا الزبون بدو يشوف شو عنا بشكل عام (شو عندكن؟ شو بتبيعو؟ بدي اتفرج)، قلّو بجملة قصيرة: "ابعتلي *ko* وبتطلعلك كل الأقسام، بتختار القسم وببعتلك صورو 👌". (التذكير بـ ko بينضاف لحالو تحت ردك أول مرة، فلا تكررو إلا إذا الزبون سأل شو عندكن)
 ## قاعدة الكروت (أهم من أي قاعدة فوق)
-- لما الزبون يسأل عن منتج: حط بـ images رقم **أنسب منتج واحد بس** من القائمة. بينبعت كرت فيه الصورة والاسم والسعر والرابط، وتحتو بنعطيه رابط تحميل التطبيق ليشوف كل المنتجات مع الأسعار. لا تبعتلو رابط الموقع.
+- لما الزبون يسأل عن منتج: حط بـ images رقم **أنسب منتج واحد بس** من القائمة. بينبعت كرت فيه الصورة والاسم والسعر والرابط، لا تبعتلو رابط الموقع ولا رابط التطبيق.
 - لهيك بالـ reply **لا تكتب أسعار ولا روابط ولا وصف ولا مواصفات ولا قائمة منتجات**. بس جملة وحدة قصيرة متل: "إي أكيد عنا 👌 هاد أحلى خيار 👇".
 - إذا قال «غيرها» أو «شوفلي غير موديلات»: اختار منتجات **ما انبعتت قبل** بالمحادثة.
 - إذا سأل «شو بتنصحني»: اختار منتج واحد، احكي ليش بجملة أو جملتين، وحط رقمه بـ images.
@@ -633,7 +633,8 @@ async function koAct(tenant, contact, r, order) {
   if (text && !spoke) await send(tenant, contact, { text, via: r._via });
   else if (hint && spoke) await send(tenant, contact, { text: hint, via: r._via });
   // تحت صورة المنتج: «بدك تشوف كل المنتجات مع الأسعار؟» أندرويد ← التطبيق، آيفون ← الموقع (مرة كل 3 ساعات للزبون)
-  const allNote = ids.length ? koAllProductsNote(contact.id) : '';
+  // موقّف مؤقتاً (1 تشرين التاني 2026): رابط Google Play بيطلع «لم يتم العثور على العنصر» بسوريا لحتى ينحل من حساب المطوّر. KO_APP_NOTE = true بيرجّعو
+  const allNote = KO_APP_NOTE && ids.length ? koAllProductsNote(contact.id) : '';
   for (const id of ids) {
     const p = koGet(id);
     const cap = koCaption(p) + (allNote && id === ids[ids.length - 1] ? '\n\n' + allNote : '');
@@ -650,6 +651,7 @@ async function koAct(tenant, contact, r, order) {
 
 // رابط واحد: أندرويد بيفتح Google Play مباشرة، آيفون بيفتح خطوات تثبيت التطبيق من الموقع (ko-sport.online/app)
 const KO_APP = 'https://ko-sport.online/app';
+const KO_APP_NOTE = false;
 const allNoted = new Map();
 function koAllProductsNote(contactId) {
   const now = Date.now();
