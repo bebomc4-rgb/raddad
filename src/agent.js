@@ -611,6 +611,8 @@ async function koAct(tenant, contact, r, order) {
   ids = (wantsPhoto ? ids : koFresh(contact.id, ids)).slice(0, maxCards); // إذا طلب صورة منبعتها حتى لو انبعتت قبل
   if (wantsPhoto) koFresh(contact.id, ids);
   if (!ids.length) text = text.replace(/\s*👇/gu, '').trim();
+  // صورة وحدة بس: الموديل أحياناً بيكتب «أحلى 5 خيارات» → منصلّح العدد
+  if (ids.length === 1) text = text.replace(/(أحلى|أفضل|أقوى|أجمل)\s+(?:\d+|[٠-٩]+|تلات|ثلاث|أربع|خمس|ست)[^\s]*\s+(خيارات|منتجات|موديلات|قطع)(\s+ل[^\s👇]*(?:\s+ال[^\s👇]*)?)?/u, '$1 خيار');
 
   // الزبون طلب مكالمة: منبعت تنبيه لصاحب المتجر مع رقمو ليتصل فيه
   if (/(اتصل|اتصال|مكالم|رن علي|رنلي|رنّلي|دق علي|دقلي|كلمني|احكيني تلفون|بالتلفون|call me)/i.test(lastIn)) {
