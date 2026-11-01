@@ -1,7 +1,7 @@
 // الربط بمسح QR أو كود الربط (غير رسمي — مجاني، بس في خطر حظر الرقم)
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR } from '../config.js';
+import { DATA_DIR, ROOT } from '../config.js';
 import { q } from '../db.js';
 import { emit } from '../events.js';
 import { phoneFromJid } from '../text.js';
@@ -684,7 +684,10 @@ async function auditContactsRun(tenantId, req) {
 // ما في أي اسم بيتغيّر طول ما الملف data/contacts-frozen موجود (بينعمل لحالو هلق).
 const FROZEN = path.join(DATA_DIR, 'contacts-frozen');
 try { if (!fs.existsSync(path.join(DATA_DIR, 'contacts-unfrozen-by-owner'))) fs.writeFileSync(FROZEN, new Date().toISOString()); } catch {}
-const frozen = () => { try { return fs.existsSync(FROZEN); } catch { return true; } };
+// صاحب المتجر (1 تشرين التاني 2026): رجّع حفظ الأرقام الجديدة. الملف deploy/contacts-on بـ GitHub بيفكّ التجميد
+// (والقاعدة بتضل: اسم محفوظ عندك ما بيتغيّر أبداً، إلا «زبون XXXX» يلي نحنا حطيناه لما الزبون يكتب اسمو)
+const CONTACTS_ON = path.join(ROOT, 'deploy', 'contacts-on');
+const frozen = () => { try { return fs.existsSync(FROZEN) && !fs.existsSync(CONTACTS_ON); } catch { return true; } };
 // إرجاع الأسماء يلي انغيّرت غلط: data/contacts-restore.json = { "1:9639…": "الاسم الأصلي" }.
 // بيرجّع كل اسم لجهات الاتصال (حتى والحفظ مجمّد)، رقم كل 3 ثواني، وبعدين بيسمّي الملف .done
 const RESTORE = path.join(DATA_DIR, 'contacts-restore.json');
