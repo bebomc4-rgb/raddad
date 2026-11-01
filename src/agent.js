@@ -622,7 +622,7 @@ async function koAct(tenant, contact, r, order) {
   // الزبون طلب رابط/تطبيق/موقع: منبعتلو رابط التطبيق بس (مو الموقع). الموديل كان يكتب «🌐 الموقع» والرابط بينشال، فيضل إيموجي لحالو
   text = text.replace(/[ \t]*🌐[ \t]*$/gmu, '').replace(/\n{3,}/g, '\n\n').trim();
   if (KO_APP_NOTE && ASKS_LINK.test(lastIn) && !order) {
-    text = `تكرم عينك 🙏\n📲 حمّل تطبيق *KO SPORT* وبتشوف كل المنتجات مع الأسعار:\n${KO_APP}`;
+    text = `تكرم عينك 🙏 حمّل تطبيق *KO SPORT* وبتشوف كل المنتجات مع الأسعار:\n${KO_LINKS}`;
     allNoted.set(contact.id, Date.now());
   }
   // الزبون بعت رسالة صوتية: منرد عليه بتسجيل صوتي (وإذا ما زبط الصوت منبعت النص)
@@ -657,6 +657,10 @@ async function koAct(tenant, contact, r, order) {
 
 // رابط واحد: أندرويد بيفتح Google Play مباشرة، آيفون بيفتح خطوات تثبيت التطبيق من الموقع (ko-sport.online/app)
 const KO_APP = 'https://ko-sport.online/app';
+// صاحب المتجر (1 تشرين التاني 2026): رابطين — أندرويد = رابط Google Play الكامل، آيفون = الموقع
+const KO_ANDROID = 'https://play.google.com/store/apps/details?id=com.kosport.app';
+const KO_IPHONE = 'https://ko-sport.online/iphone';
+const KO_LINKS = `📱 *أندرويد:*\n${KO_ANDROID}\n🍏 *آيفون:*\n${KO_IPHONE}`;
 const KO_APP_NOTE = true;
 const ASKS_LINK = /(رابط|لينك|اللينك|link|تطبيق|تطبيقكن|تطبيقكم|ابلكيشن|أبلكيشن|application|\bapp\b|ويب ?سايت|website)/i; // «موقعكن» لأ: ممكن يقصد وين المحل
 const allNoted = new Map();
@@ -664,7 +668,7 @@ function koAllProductsNote(contactId) {
   const now = Date.now();
   if (now - (allNoted.get(contactId) || 0) < 3 * 3600_000) return '';
   allNoted.set(contactId, now); if (allNoted.size > 5000) allNoted.delete(allNoted.keys().next().value);
-  return `👀 بدك تشوف *كل المنتجات مع الأسعار*؟\n📲 حمّل تطبيق *KO SPORT* (أندرويد وآيفون):\n${KO_APP}`;
+  return `👀 بدك تشوف *كل المنتجات مع الأسعار*؟ حمّل تطبيق *KO SPORT*:\n${KO_LINKS}`;
 }
 
 function saveOrder(tenant, contact, o) {
