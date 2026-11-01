@@ -757,7 +757,9 @@ export async function saveContact(tenantId, phone, name, force = false) {
   if (have) {
     // محفوظ عندك باسم: ما منغيّرو أبداً. بس إذا الاسم «زبون XXXX» ومنعرف الاسم الحقيقي، منبدّلو
     if (have === real) return true;
-    if (!isPh(tenantId, have) && have !== saved[key]) return true; // اسم انت حاططو: ما منلمسو أبداً (بس منصلّح الأسماء يلي نحنا حطيناها)
+    // القاعدة المطلقة (صاحب المتجر): أي اسم حقيقي محفوظ ما بيتغيّر أبداً، مين ما كان حاططو. بيتغيّر بس «زبون XXXX» لاسم كتبو الزبون نفسو
+    // (1 تشرين التاني: «علي صالح» انقلب «زبون 1350» لأنو كان في استثناء هون للأسماء يلي البوت حاططها)
+    if (!isPh(tenantId, have)) return true;
     if (isPh(tenantId, have) && !real) return true;
   }
   const full = real || (prefixOf(tenantId) + ' ' + num.slice(-4));
@@ -776,7 +778,7 @@ const bulk = new Map(); // tenantId -> Map(num -> name)
 let bulkTimer = null;
 export function queueContacts(tenantId, list) {
   const m = bulk.get(tenantId) || new Map(); let n = 0; const pre = prefixOf(tenantId);
-  for (const { phone, name } of list) { const num = String(phone || '').replace(/\D/g, ''); const bk = bookName(tenantId, num); if (num.length >= 8 && !m.has(num) && (() => { const k = tenantId + ':' + num, sv = saved[k], rn = realNames[k], want = rn || (pre + ' ' + num.slice(-4)); if (!bk) return true; if (isPh(tenantId, bk)) return !!rn && bk !== rn; return bk === sv && sv !== want; })()) { m.set(num, name || ''); n++; } }
+  for (const { phone, name } of list) { const num = String(phone || '').replace(/\D/g, ''); const bk = bookName(tenantId, num); if (num.length >= 8 && !m.has(num) && (() => { const k = tenantId + ':' + num, sv = saved[k], rn = realNames[k], want = rn || (pre + ' ' + num.slice(-4)); if (!bk) return true; if (isPh(tenantId, bk)) return !!rn && bk !== rn; return false; /* اسم حقيقي محفوظ: ما منلمسو أبداً */ })()) { m.set(num, name || ''); n++; } }
   bulk.set(tenantId, m);
   if (n) console.log(`[wa] tenant ${tenantId}: ${n} numbers queued to save in contacts`);
   if (!bulkTimer) bulkTimer = setInterval(async () => {
