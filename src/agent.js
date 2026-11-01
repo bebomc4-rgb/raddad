@@ -1,5 +1,7 @@
 // عقل المنصة: استقبال الرسائل، بناء السياق، سؤال الذكاء الاصطناعي، وتنفيذ الرد والطلبات
-import { q, bumpUsage } from './db.js';
+import { q, bumpUsage, getSetting } from './db.js';
+// صاحب المتجر (1 تشرين التاني 2026): المجيب ما بيرد بصوت أبداً — بيسمع الصوتية وبيرد برسالة مكتوبة. بيرجع بالإعداد voice_replies = true
+const voiceRepliesOn = () => { try { return getSetting('voice_replies', false) === true; } catch { return false; } };
 import { emit } from './events.js';
 import { getTenant, aiAllowance, subscriptionExpired } from './tenants.js';
 import { trialStatus } from './trial.js';
@@ -322,6 +324,7 @@ export async function think(tenant, contact, history) {
   let voiceOn = /🎤|رسالة صوتية/.test(String(history.filter(m => m.direction === 'in').slice(-1)[0]?.body || ''));
   try { voiceOn = voiceOn || !!JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'fish.json'), 'utf8')).always; } catch {}
   if (!voiceOn && contact && contactWantsVoice(contact)) voiceOn = true;
+  if (!voiceRepliesOn()) voiceOn = false;
   const voiceNote = isKoTenant(tenant) && voiceOn ? `\n\n## ردك رح ينقرا بصوت (تسجيل صوتي)\nاكتب الرد بالعامية الشامية متل ما بينلفظ بالزبط، مو فصحى: «هلّق» مو «الآن»، «شو» مو «ماذا»، «بدّك» مو «تريد»، «منيح» مو «جيد»، «كتير» مو «كثيراً»، «عنّا» مو «لدينا». حط شدّة عالحروف المشدّدة (بدّك، هلّق، حبّيت، عنّا). بلا رموز وبلا إيموجي وبلا روابط وبلا أرقام منتجات، والأسعار اكتبها بالحكي (خمسة وعشرين دولار). جمل قصيرة وطبيعية متل الحكي.` : '';
   const nameNote = isKoTenant(tenant) && contact && !personNote ? (knownName ? `\n\n## اسم الزبون الحقيقي: ${knownName}\nناديه فيه بلطف بين فترة وفترة.` : `\n\n## اسم الزبون مو معروف\nبأول المحادثة (أو بأول رد إذا لسا ما سألت)، اسألو مرة وحدة بس بلطف وبشكل طبيعي عن اسمو، متل: «تشرفنا، شو الاسم الكريم؟ 🌹»، وكمّل جوابك عادي بنفس الرسالة. لما يقلّك حطّو بـ customer_name. إذا سألتو قبل وما جاوب، لا تعيد.`) : '';
   const girlNote = isGirl ? `\n\n## مهم جداً: يلي عم تحكي معها بنت\nاحكيها بصيغة المؤنث السورية بكل جملة، بلا تشكيل (بلا كسرة وفتحة وشدّة): تكرمي، فيكي، عساكي بخير، شو بتحبي، بدك تشوفي، اختاري، ابعتيلي، عجبك، منختارلك. راجع الرد قبل ما تبعتو.` : '';
@@ -618,7 +621,7 @@ async function koAct(tenant, contact, r, order) {
   let spoke = false;
   let voiceAll = false; try { voiceAll = !!JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'fish.json'), 'utf8')).always; } catch {}
   if (!voiceAll && isKoTenant(tenant) && contactWantsVoice(contact)) voiceAll = true;
-  if (text && (voiceAll || /🎤|رسالة صوتية/.test(String(r._lastIn || '')))) {
+  if (voiceRepliesOn() && text && (voiceAll || /🎤|رسالة صوتية/.test(String(r._lastIn || '')))) {
     try { console.log(`[tts] tenant ${tenant.id}: making a voice reply…`); const { speak } = await import('./tts.js'); const a = await speak(tenant, text); if (a) { await send(tenant, contact, { audio: a, text, via: r._via }); spoke = true; console.log(`[tts] tenant ${tenant.id}: voice reply sent`); } }
     catch (e) { console.error('[tts] voice reply', e.message); }
   }
