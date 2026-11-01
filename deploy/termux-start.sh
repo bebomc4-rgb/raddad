@@ -2,6 +2,8 @@
 # تشغيل المجيب بالخلفية، وإعادة تشغيلو لحالو إذا وقف، وسحب التعديلات من GitHub لحالها
 APP=~/raddad
 mkdir -p "$APP/data"
+# المجيب انتقل للسيرفر: الموبايل ما لازم يشتغل (نفس ربط الواتساب ما بيشتغل بمكانين)
+if [ -f "$APP/data/moved-to-server" ]; then echo "• المجيب صار على السيرفر ($(tail -n1 "$APP/data/moved-to-server")) — الموبايل ما بيشتغل"; exit 0; fi
 # يمنع أندرويد ينيّم Termux
 command -v termux-wake-lock >/dev/null && termux-wake-lock
 

@@ -7,7 +7,8 @@
 import { getSetting } from './db.js';
 
 export const DEVICE = process.env.DEVICE_NAME || (process.platform === 'android' ? 'phone' : 'pc');
-const pickPrimary = () => { if (['pc', 'phone'].includes(process.env.PRIMARY_DEVICE)) return process.env.PRIMARY_DEVICE; try { const v = getSetting('primary_device', 'phone'); return ['pc', 'phone'].includes(v) ? v : 'phone'; } catch { return 'phone'; } };
+const ROLES = ['pc', 'phone', 'server'];
+const pickPrimary = () => { if (ROLES.includes(process.env.PRIMARY_DEVICE)) return process.env.PRIMARY_DEVICE; try { const v = getSetting('primary_device', 'phone'); return ROLES.includes(v) ? v : 'phone'; } catch { return 'phone'; } };
 export const PRIMARY = pickPrimary();
 const STANDBY = DEVICE !== PRIMARY;
 // صاحب المتجر (1 تشرين التاني): الكمبيوتر مفصول عن الموبايل. الجهاز يلي مو أساسي **ما بيستلم أبداً** ولا بيبعت ولا رسالة،
@@ -17,7 +18,7 @@ try { const fs = await import('node:fs'), p = await import('node:path'), { DATA_
 let active = !STANDBY, downSince = 0;
 export const isActive = () => active;
 export const failoverStatus = () => ({ device: DEVICE, primary: PRIMARY, backup: STANDBY, active });
-const NAME = { pc: 'PC', phone: 'phone' };
+const NAME = { pc: 'PC', phone: 'phone', server: 'server' };
 
 const linkUrl = () => String(process.env.FAILOVER_URL || getSetting('public_link', {}).last_url || '').replace(/\/$/, '');
 export async function whoIsLive(ms = 12000) {
