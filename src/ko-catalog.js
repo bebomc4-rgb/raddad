@@ -7,7 +7,7 @@ import { DATA_DIR } from './config.js';
 
 export const KO_STORE = (process.env.KO_STORE_URL || 'https://ko-sport.pages.dev').replace(/\/+$/, '');
 export const KO_TENANT_ID = Number(process.env.KO_TENANT_ID || 1);
-export const KO_CARDS = 3; // كم منتج بيبعت (كل واحد برسالة لحالو)
+export const KO_CARDS = 1; // صاحب المتجر (1 تشرين التاني 2026): صورة وحدة للمنتج بس، والباقي عالتطبيق/الموقع
 
 // الربط بينطفى ويشتغل من لوحة تحكم الموقع (قسم «المجيب K FAST»). مطفي = المجيب بيرجع لمنتجاتو المحلية متل ما كان
 let linked = true;

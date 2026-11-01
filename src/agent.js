@@ -485,8 +485,8 @@ ${prevOrders[0] && (prevOrders[0].customer_name || prevOrders[0].address) ? `- �
 ## قائمة الأقسام
 - إذا الزبون بدو يشوف شو عنا بشكل عام (شو عندكن؟ شو بتبيعو؟ بدي اتفرج)، قلّو بجملة قصيرة: "ابعتلي *ko* وبتطلعلك كل الأقسام، بتختار القسم وببعتلك صورو 👌". (التذكير بـ ko بينضاف لحالو تحت ردك أول مرة، فلا تكررو إلا إذا الزبون سأل شو عندكن)
 ## قاعدة الكروت (أهم من أي قاعدة فوق)
-- لما الزبون يسأل عن منتج: حط بـ images أرقام أنسب ${KO_CARDS} منتجات من القائمة (أو أقل إذا ما في). كل منتج بينبعت لحالو كرت فيه الصورة والاسم والسعر والرابط.
-- لهيك بالـ reply **لا تكتب أسعار ولا روابط ولا وصف ولا مواصفات ولا قائمة منتجات**. بس جملة وحدة قصيرة متل: "إي أكيد عنا 👌 هي أحلى ${KO_CARDS} خيارات 👇".
+- لما الزبون يسأل عن منتج: حط بـ images رقم **أنسب منتج واحد بس** من القائمة. بينبعت كرت فيه الصورة والاسم والسعر والرابط، وتحتو بنقلّو وين بيشوف كل المنتجات مع الأسعار (التطبيق للأندرويد والموقع للآيفون).
+- لهيك بالـ reply **لا تكتب أسعار ولا روابط ولا وصف ولا مواصفات ولا قائمة منتجات**. بس جملة وحدة قصيرة متل: "إي أكيد عنا 👌 هاد أحلى خيار 👇".
 - إذا قال «غيرها» أو «شوفلي غير موديلات»: اختار منتجات **ما انبعتت قبل** بالمحادثة.
 - إذا سأل «شو بتنصحني»: اختار منتج واحد، احكي ليش بجملة أو جملتين، وحط رقمه بـ images.
 - **ممنوع تكتب بالـ reply أسماء المنتجات مع أسعارها أو 💰 أو 🛒 أو أرقام #** (الكروت بتنبعت لحالها، وإلا بينبعت كل شي مرتين).
@@ -607,7 +607,7 @@ async function koAct(tenant, contact, r, order) {
   const siteDisc = new Set(pool.map(p => p._disc).filter(Boolean));
   text = text.replace(/(\d{1,3})\s*(%|٪|بالمي[هة]|بالمئ[هة]|بالمية)/g, (m, n, u) => (+n > 10 && !siteDisc.has(+n) ? '10' + (u.length > 1 ? ' ' : '') + u : m));
   ids = [...new Set(ids)].filter(id => koGet(id)?._in);
-  const maxCards = r._koColorWant ? 6 : KO_CARDS; // طلب لون: كل المنتجات بنفس اللون (لحد 6)
+  const maxCards = KO_CARDS; // صورة وحدة بس (حتى بطلب لون)
   ids = (wantsPhoto ? ids : koFresh(contact.id, ids)).slice(0, maxCards); // إذا طلب صورة منبعتها حتى لو انبعتت قبل
   if (wantsPhoto) koFresh(contact.id, ids);
   if (!ids.length) text = text.replace(/\s*👇/gu, '').trim();
@@ -630,10 +630,13 @@ async function koAct(tenant, contact, r, order) {
   if (hint && text && !spoke && !/(^|\s)ko(\s|$)/i.test(text)) text += '\n\n' + hint;
   if (text && !spoke) await send(tenant, contact, { text, via: r._via });
   else if (hint && spoke) await send(tenant, contact, { text: hint, via: r._via });
+  // تحت صورة المنتج: «بدك تشوف كل المنتجات مع الأسعار؟» أندرويد ← التطبيق، آيفون ← الموقع (مرة كل 3 ساعات للزبون)
+  const allNote = ids.length ? koAllProductsNote(contact.id) : '';
   for (const id of ids) {
     const p = koGet(id);
-    try { await send(tenant, contact, { image: (await koImage(p.image_url)) || undefined, text: koCaption(p), via: r._via }); }
-    catch (e) { console.error('[ko-card]', e.message); try { await send(tenant, contact, { text: koCaption(p), via: r._via }); } catch {} }
+    const cap = koCaption(p) + (allNote && id === ids[ids.length - 1] ? '\n\n' + allNote : '');
+    try { await send(tenant, contact, { image: (await koImage(p.image_url)) || undefined, text: cap, via: r._via }); }
+    catch (e) { console.error('[ko-card]', e.message); try { await send(tenant, contact, { text: cap, via: r._via }); } catch {} }
   }
 
   if (r.handoff) await doHandoff(tenant, contact, 'الذكاء الاصطناعي حوّل المحادثة');
@@ -641,6 +644,16 @@ async function koAct(tenant, contact, r, order) {
     const items = order.items.map(i => `• ${i.name}${i.options ? ' (' + i.options + ')' : ''} × ${i.qty || 1}`).join('\n');
     notifyOwner(tenant, `🛒 *طلب جديد #${order.id}*\n${items}\n👤 ${order.customer_name || contact.name || ''} — ${order.customer_phone || contact.phone || ''}\n📍 ${order.address || ''}${order.total ? `\n💰 ${order.total} ${tenant.knowledge.currency}` : ''}`);
   }
+}
+
+const KO_PLAY = 'https://play.google.com/store/apps/details?id=com.kosport.app';
+const KO_SITE = 'https://ko-sport.online';
+const allNoted = new Map();
+function koAllProductsNote(contactId) {
+  const now = Date.now();
+  if (now - (allNoted.get(contactId) || 0) < 3 * 3600_000) return '';
+  allNoted.set(contactId, now); if (allNoted.size > 5000) allNoted.delete(allNoted.keys().next().value);
+  return `👀 بدك تشوف *كل المنتجات مع الأسعار*؟\n📱 إذا تلفونك *أندرويد*: حمّل تطبيقنا\n${KO_PLAY}\n🍏 إذا *آيفون*: فوت على موقعنا\n${KO_SITE}`;
 }
 
 function saveOrder(tenant, contact, o) {
