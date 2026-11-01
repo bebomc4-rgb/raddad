@@ -28,6 +28,8 @@ import { startAutoWorker } from './src/autofolder.js';
 import { startTunnel, stopTunnel, setPublishing, tunnelRunning } from './src/tunnel.js';
 import { isActive, failoverStatus, startFailover, startPrimaryWatch } from './src/failover.js';
 import { getSetting } from './src/db.js';
+// نسخة الكود الشغّالة (GitHub بيتأكد منها بعد كل تعديل إنو وصل للسيرفر)
+const CODE_VERSION = (() => { try { const h = fs.readFileSync(path.join(ROOT, '.git', 'HEAD'), 'utf8').trim(); const ref = h.startsWith('ref:') ? fs.readFileSync(path.join(ROOT, '.git', h.slice(5).trim()), 'utf8').trim() : h; return ref.slice(0, 7); } catch { return ''; } })();
 
 const PUBLIC = path.join(ROOT, 'public');
 const COOKIE = 'raddad_sid';
@@ -75,7 +77,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // مين شغّال هلق (الكمبيوتر ولا الموبايل الاحتياط) — بيسألو الموبايل كل 30 ثانية
-    if (pathname === '/api/whoami') return json(res, 200, failoverStatus());
+    if (pathname === '/api/whoami') return json(res, 200, { ...failoverStatus(), version: CODE_VERSION });
     // GitHub بيدق هون بعد كل تعديل (.github/workflows/deploy.yml) → السيرفر بيسحب التعديل فوراً بدل ما يستنّى.
     // ما فيه سر: كل يلي بيعملو إنو السيرفر بيسأل GitHub إذا في جديد (مرة كل 15 ثانية بالأكتر)
     if (pathname === '/api/deploy-hook') {

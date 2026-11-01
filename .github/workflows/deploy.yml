@@ -6,9 +6,16 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: tell the server there is an update
+      - name: tell the server there is an update, then wait until it runs the new code
         run: |
+          V="${GITHUB_SHA::7}"
           for u in https://k-fast-ai.pages.dev https://k-fast-ai.sfa7al3asme.workers.dev; do
-            curl -fsS -m 20 "$u/api/deploy-hook?t=$(date +%s)" && exit 0 || true
+            curl -fsS -m 20 "$u/api/deploy-hook?t=$(date +%s)" && break || true
           done
-          echo "server did not answer (it updates by itself within a minute)"
+          for i in $(seq 1 30); do
+            sleep 6
+            got=$(curl -fsS -m 10 "https://k-fast-ai.pages.dev/api/whoami?t=$(date +%s)" || true)
+            echo "$got"
+            echo "$got" | grep -q "\"version\":\"$V\"" && { echo "✓ the server runs $V"; exit 0; }
+          done
+          echo "✗ the server did not take $V within 3 minutes"; exit 1
