@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # تحديث السيرفر من GitHub: بيشتغل كـ root فوراً بعد كل تعديل (GitHub بيدق /api/deploy-hook) وكل دقيقة احتياط
+# (1 تشرين التاني 2026) صار فوري: GitHub Actions → /api/deploy-hook → data/update-now → raddad-update.path
 main() {
   rm -f /opt/raddad/data/update-now
   cd /opt/raddad || return 0
