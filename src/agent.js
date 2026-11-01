@@ -651,7 +651,7 @@ async function koAct(tenant, contact, r, order) {
 
 // رابط واحد: أندرويد بيفتح Google Play مباشرة، آيفون بيفتح خطوات تثبيت التطبيق من الموقع (ko-sport.online/app)
 const KO_APP = 'https://ko-sport.online/app';
-const KO_APP_NOTE = true;
+const KO_APP_NOTE = false;
 const allNoted = new Map();
 function koAllProductsNote(contactId) {
   const now = Date.now();
