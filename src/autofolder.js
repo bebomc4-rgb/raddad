@@ -227,7 +227,7 @@ async function tick() {
     const tid = Number(r.key.slice(5)); const cfg = getAuto(tid);
     if (!cfg.running) continue;
     // الرفع وقف (سكّر الصفحة أو انقطع النت) أكتر من دقيقتين: منكمّل بيلي وصل
-    if (cfg.uploading && Date.now() - (lastUpload.get(tid) || 0) > 120_000) { setAuto(tid, { uploading: false }); cfg.uploading = false; }
+    if (cfg.uploading && Date.now() - Math.max(lastUpload.get(tid) || 0, (() => { try { return fs.statSync(cfg.folder).mtimeMs; } catch { return 0; } })()) > 120_000) { setAuto(tid, { uploading: false }); cfg.uploading = false; }
     const done = new Set(q.all("SELECT product FROM auto_items WHERE tenant_id = ? AND status IN ('done','error')", tid).map(x => x.product));
     let prods = listProducts(cfg.folder, tid);
     if (!prods.length && cfg.uploading) continue; // صور بمجلد واحد عم تنرفع: منجمّعهن بعد ما يخلص الرفع
