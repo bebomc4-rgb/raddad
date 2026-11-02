@@ -489,14 +489,14 @@ r.post('/api/batch/prompts', ctx => {
 // ===== استوديو Gemini: متل موقع Gemini — الصور والكلام بينبعتوا متل ما هنن بدون أي إضافة =====
 r.post('/api/studio', async ctx => {
   owner(ctx);
-  const { history = [], text = '', images = [], aspect = '', size = '2K', model = '' } = ctx.body;
+  const { history = [], text = '', images = [], aspect = '', size = '1K', model = '' } = ctx.body;
   need(String(text).trim() || images.length, 400, 'اكتب شي أو ارفع صورة');
   const { resolveAI } = await import('./ai.js');
   const imgPart = u => { const f = path.join(DATA_DIR, 'uploads', path.basename(String(u))); if (!fs.existsSync(f)) return null;
     return { inline_data: { mime_type: f.endsWith('.png') ? 'image/png' : f.endsWith('.webp') ? 'image/webp' : 'image/jpeg', data: fs.readFileSync(f).toString('base64') } }; };
   const turn = (role, t, imgs) => ({ role, parts: [...(imgs || []).map(imgPart).filter(Boolean), ...(t ? [{ text: String(t) }] : [])] });
   const contents = [...history.slice(-8).map(h => turn(h.role === 'model' ? 'model' : 'user', h.text, h.images)), turn('user', text, images)].filter(c => c.parts.length);
-  const mdl = /^[\w.-]+$/.test(model) ? model : 'gemini-3-pro-image';
+  const mdl = /^[\w.-]+$/.test(model) ? model : 'gemini-nano-banana-2.1';
   const cfg = { responseModalities: ['IMAGE', 'TEXT'], imageConfig: { ...(aspect ? { aspectRatio: aspect } : {}), imageSize: ['1K', '2K', '4K'].includes(size) ? size : '2K' } };
   const keys = resolveAI(ctx.tenant).filter(p => p.kind === 'gemini' && p.key);
   const paid = p => /مدفوع|paid|pro/i.test(p.name || '');

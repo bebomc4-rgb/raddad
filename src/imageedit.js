@@ -8,7 +8,7 @@ import { resolveAI, chat, AIError } from './ai.js';
 
 const CF_EDIT = '@cf/black-forest-labs/flux-2-klein-4b';
 const COMFY = (process.env.COMFY_URL || 'http://127.0.0.1:8188').replace(/\/$/, '');
-const GEMINI_IMAGE = process.env.GEMINI_IMAGE_MODEL || 'gemini-3-pro-image'; // نفس موديل موقع Gemini (Nano Banana Pro)
+const GEMINI_IMAGE = process.env.GEMINI_IMAGE_MODEL || 'gemini-nano-banana-2.1'; // الأرخص (صاحب المتجر، 2 تشرين التاني 2026) — كان Nano Banana Pro
 
 // كلمات بتدل إنو صاحب المتجر بدو تعديل على آخر صورة
 export const EDIT_WORDS = /(عدّ?ل|غيّ?ر|خلي|خلّي|حط|ضيف|زيد|شيل|امسح|اعمل|إعمل|سوي|سوّي|صمم|صمّم|إعلان|اعلان|بوستر|خلفية|لون|edit|change|remove|add|make|poster|background)/i;
@@ -213,7 +213,7 @@ export async function geminiProduct(tenant, urls, prompt) {
     try {
       const url = `${(p.base_url || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/, '')}/models/${GEMINI_IMAGE}:generateContent`;
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
-        body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'], imageConfig: { aspectRatio: '4:5', imageSize: '2K' } } }),
+        body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'], imageConfig: { aspectRatio: '4:5', imageSize: '1K' } } }),
         signal: AbortSignal.timeout(180_000) });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new AIError(d?.error?.message || `Gemini (${res.status})`, res.status);

@@ -1479,7 +1479,7 @@ async function viewAuto() {
           </div>
           <label class="field"><span>البرومبت الثابت</span><textarea name="prompt" rows="7">${esc(c.prompt)}</textarea></label>
           <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
-            <select name="model"><option value="gemini-3-pro-image" ${c.model === 'gemini-3-pro-image' ? 'selected' : ''}>Nano Banana Pro (الأحسن)</option><option value="gemini-3.1-flash-image" ${c.model === 'gemini-3.1-flash-image' ? 'selected' : ''}>Nano Banana 2 (أرخص)</option></select>
+            <select name="model"><option value="gemini-nano-banana-2.1" ${c.model === 'gemini-nano-banana-2.1' ? 'selected' : ''}>Nano Banana 2.1 (أرخص: ~0.034$ بـ 1K)</option><option value="gemini-3-pro-image" ${c.model === 'gemini-3-pro-image' ? 'selected' : ''}>Nano Banana Pro (الأحسن، ~0.134$)</option><option value="gemini-3.1-flash-image" ${c.model === 'gemini-3.1-flash-image' ? 'selected' : ''}>Nano Banana 2 (أرخص)</option></select>
             <select name="size">${['1K', '2K', '4K'].map(x => `<option ${c.size === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
             <select name="aspect">${['', '1:1', '4:5', '3:4', '9:16', '16:9'].map(x => `<option value="${x}" ${c.aspect === x ? 'selected' : ''}>${x || 'مقاس تلقائي'}</option>`).join('')}</select>
             <label class="switch"><input type="checkbox" name="brand" ${c.brand ? 'checked' : ''}><span class="track"></span>ابعت لوغو المتجر + الدراغون</label>
@@ -1675,7 +1675,7 @@ async function viewMessenger() {
 }
 
 // ===== استوديو Gemini: واجهة متل موقع Gemini =====
-const studio = { msgs: [], att: [], aspect: '4:5', size: '2K', model: 'gemini-3-pro-image' };
+const studio = { msgs: [], att: [], aspect: '4:5', size: '1K', model: 'gemini-nano-banana-2.1' };
 async function viewStudio() {
   const brandImgs = await api('/api/studio/brand').catch(() => []);
   const draw = () => {
@@ -1700,7 +1700,7 @@ async function viewStudio() {
             ${brandImgs.map(b => `<button type="button" class="btn ghost small" data-brand="${esc(b.url)}">+ ${esc(b.label)}</button>`).join('')}
             <select id="sAspect">${['', '1:1', '4:5', '3:4', '9:16', '16:9'].map(a => `<option value="${a}" ${studio.aspect === a ? 'selected' : ''}>${a || 'مقاس تلقائي'}</option>`).join('')}</select>
             <select id="sSize">${['1K', '2K', '4K'].map(a => `<option ${studio.size === a ? 'selected' : ''}>${a}</option>`).join('')}</select>
-            <select id="sModel"><option value="gemini-3-pro-image" ${studio.model === 'gemini-3-pro-image' ? 'selected' : ''}>Nano Banana Pro (الأحسن)</option><option value="gemini-3.1-flash-image" ${studio.model === 'gemini-3.1-flash-image' ? 'selected' : ''}>Nano Banana 2 (أسرع وأرخص)</option></select>
+            <select id="sModel"><option value="gemini-nano-banana-2.1" ${studio.model === 'gemini-nano-banana-2.1' ? 'selected' : ''}>Nano Banana 2.1 (أرخص: ~0.034$ بـ 1K)</option><option value="gemini-3-pro-image" ${studio.model === 'gemini-3-pro-image' ? 'selected' : ''}>Nano Banana Pro (الأحسن، ~0.134$)</option><option value="gemini-3.1-flash-image" ${studio.model === 'gemini-3.1-flash-image' ? 'selected' : ''}>Nano Banana 2 (أسرع وأرخص)</option></select>
             <span class="spacer"></span>
             <button class="btn primary" id="sSend" ${studio.busy ? 'disabled' : ''}>إرسال</button>
           </div>

@@ -14,7 +14,10 @@ export const DEFAULT_PROMPT = `اتخيل انك مصور منتجات ب است
 
 const key = tid => `auto_${tid}`;
 export function getAuto(tid) {
-  return { folder: '', out: '', prompt: DEFAULT_PROMPT, model: 'gemini-3-pro-image', size: '2K', aspect: '1:1', brand: true, running: false, current: null, ...getSetting(key(tid), {}) };
+  const c = { folder: '', out: '', prompt: DEFAULT_PROMPT, model: 'gemini-nano-banana-2.1', size: '1K', aspect: '1:1', brand: true, running: false, current: null, ...getSetting(key(tid), {}) };
+  // صاحب المتجر (2 تشرين التاني 2026): الموديل الأرخص Nano Banana 2.1 بدقة 1K (بدل Pro بـ 2K) — مرة وحدة للإعدادات القديمة
+  if (!c.cheap21) { c.model = 'gemini-nano-banana-2.1'; c.size = '1K'; c.cheap21 = true; try { setSetting(key(tid), { ...getSetting(key(tid), {}), model: c.model, size: c.size, cheap21: true }); } catch {} }
+  return c;
 }
 export function setAuto(tid, patch) { const v = { ...getAuto(tid), ...patch }; setSetting(key(tid), v); emit(tid, 'auto', {}); return v; }
 
@@ -135,11 +138,11 @@ async function processOne(tid, cfg, prod) {
     for (const f of ['logo.png', 'mark-src.png']) if (fs.existsSync(path.join(dir, f))) parts.push(part({ mime: 'image/png', data: fs.readFileSync(path.join(dir, f)).toString('base64') }));
   }
   parts.push({ text: cfg.prompt || DEFAULT_PROMPT });
-  const body = { contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'], imageConfig: { ...(cfg.aspect ? { aspectRatio: cfg.aspect } : {}), imageSize: cfg.size || '2K' } } };
+  const body = { contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'], imageConfig: { ...(cfg.aspect ? { aspectRatio: cfg.aspect } : {}), imageSize: cfg.size || '1K' } } };
   let lastErr = 'ما في مفتاح Gemini مدفوع';
   for (const p of geminiKeys(tenant)) {
     try {
-      const d = await gemini(p, cfg.model || 'gemini-3-pro-image', body);
+      const d = await gemini(p, cfg.model || 'gemini-nano-banana-2.1', body);
       const ps = d?.candidates?.[0]?.content?.parts || [];
       const img = ps.find(x => !x.thought && (x.inline_data || x.inlineData));
       if (!img) { lastErr = 'Gemini ما رجّع صورة (' + (d?.candidates?.[0]?.finishReason || d?.promptFeedback?.blockReason || '') + ')'; continue; }
