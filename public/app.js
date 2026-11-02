@@ -1454,6 +1454,23 @@ async function viewBatch() {
 }
 
 // ===== التعديل التلقائي من مجلد =====
+
+// بطاقة رصيد Gemini المدفوع (تقديري: كل صورة بسعرها الرسمي، مطروحة من آخر رصيد كتبتو من AI Studio)
+const AI_SPEND_URL = 'https://aistudio.google.com/u/3/spend?project=gen-lang-client-0850558333';
+async function fillSpend(box) {
+  if (!box) return;
+  let d; try { d = await api('/api/ai-spend'); } catch { box.innerHTML = ''; return; }
+  const $$ = v => v == null ? '—' : `${Number(v).toFixed(2)}$`;
+  box.innerHTML = `<div class="panel" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+    <div style="flex:1;min-width:220px">
+      <h2 style="margin:0">💰 رصيد Gemini: ${d.left == null ? 'اكتب رصيدك' : `<b>${$$(d.left)}</b> تقريباً`}</h2>
+      <div class="muted">${d.left == null ? 'اكتب الرصيد يلي بصفحة Billing بـ AI Studio مرة وحدة، وأنا بنقّص منو كل صورة' : `بيكفّي حوالي <b>${d.images_left}</b> صورة · صرفت اليوم ${$$(d.today)} (${d.images_today} صورة) · هالشهر ${$$(d.month)}`}</div>
+    </div>
+    <form id="spendForm" class="row" style="gap:6px;align-items:center"><input name="balance" type="number" step="0.01" min="0" dir="ltr" placeholder="الرصيد $" style="width:110px" value="${d.left ?? ''}"><button class="btn small">حدّث الرصيد</button></form>
+    <a class="btn ghost small" href="${AI_SPEND_URL}" target="_blank" rel="noopener">صفحة المصروف بـ Google ↗</a>
+  </div>`;
+  box.querySelector('#spendForm').onsubmit = async e => { e.preventDefault(); try { await api('/api/ai-spend', { method: 'PUT', body: { balance: e.target.balance.value } }); toast('انحفظ الرصيد'); fillSpend(box); } catch (err) { fail(err); } };
+}
 const getAuto_running = d => !!d?.cfg?.running;
 async function viewAuto() {
   const draw = async () => {
@@ -1465,6 +1482,7 @@ async function viewAuto() {
       ${mobileTop()}
       <div class="page" style="max-width:1000px">
         <div class="page-head"><h1>تعديل تلقائي من مجلد</h1><p>كبوس «اختيار المجلد» واختار مجلد الصور من جهازك — المنصة بتتعرّف لحالها على صور كل منتج (أو إذا بدك حط كل منتج بمجلد لحاله). بتختار أحسن صورة لكل منتج، بتعدّلها بـ Gemini بالبرومبت الثابت، وبتحفظها لحالها.</p></div>
+        <div id="spendBox"></div>
         <div class="panel" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;${c.running ? 'border:2px solid #2a9d5c' : ''}">
           <div style="flex:1;min-width:220px">
             <h2 style="margin:0">${c.running && c.grouping ? `🔎 ${esc(c.grouping)}` : c.running ? (c.current ? `🎨 عم يعدّل: <b>${esc(c.current)}</b>` : '▶ شغّال — عم يدوّر عالمنتج الجاي') : '⏸ واقف'}</h2>
@@ -1513,6 +1531,7 @@ async function viewAuto() {
         </div>
       </div>`);
     // اختيار مجلد من الجهاز ← بينرفع للسيرفر (كل منتج بمجلد فرعي بيضل منتج لحالو)
+    fillSpend($('#spendBox'));
     $('#aPick').onclick = () => $('#aDir').click();
     $('#aDir').onchange = async e => {
       const files = [...e.target.files].filter(f => /\.(jpe?g|png|webp)$/i.test(f.name));
@@ -1713,6 +1732,7 @@ async function viewStudio() {
       <div class="page" style="max-width:900px;display:flex;flex-direction:column;min-height:calc(100vh - 40px)">
         <div class="page-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h1 style="margin:0">🍌 استوديو Gemini</h1>
           <button class="btn ghost small" id="sNew">محادثة جديدة</button></div>
+        <div id="spendBoxS"></div>
         <div id="sMsgs" style="flex:1;display:flex;flex-direction:column;gap:12px;padding:8px 0">
           ${studio.msgs.map(m => `<div style="align-self:${m.role === 'user' ? 'flex-start' : 'flex-end'};max-width:92%" class="panel">
             ${(m.images || []).length ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${m.images.map(u => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" style="max-width:${m.role === 'model' ? '420px' : '110px'};width:100%;border-radius:10px"></a>`).join('')}</div>` : ''}
@@ -1740,6 +1760,7 @@ async function viewStudio() {
     $('#sAspect').onchange = e => { studio.aspect = e.target.value; };
     $('#sSize').onchange = e => { studio.size = e.target.value; };
     $('#sModel').onchange = e => { studio.model = e.target.value; };
+    fillSpend($('#spendBoxS'));
     $('#sNew').onclick = () => { if (confirm('تبلّش محادثة جديدة؟')) { studio.msgs = []; studio.att = []; draw(); } };
     document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { studio.att.splice(+b.dataset.rm, 1); draw(); });
     document.querySelectorAll('[data-brand]').forEach(b => b.onclick = () => { if (!studio.att.includes(b.dataset.brand)) studio.att.push(b.dataset.brand); draw(); });

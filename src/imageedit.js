@@ -227,6 +227,7 @@ export async function geminiProduct(tenant, urls, prompt) {
       }
       const name = `${tenant.id}-gemini-${crypto.randomBytes(8).toString('hex')}.png`;
       fs.writeFileSync(path.join(DATA_DIR, 'uploads', name), Buffer.from(data, 'base64'));
+      import('./spend.js').then(S => S.recordImage(GEMINI_IMAGE, '1K', p.name, 'تعديل صورة بالواتس')).catch(() => {});
       return { url: `/uploads/${name}`, by: 'Gemini (' + (p.name || 'Gemini') + ')' };
     } catch (e) { lastErr = e; console.error('[image] gemini', p.name, e.message); }
   }

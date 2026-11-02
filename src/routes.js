@@ -514,6 +514,7 @@ r.post('/api/studio', async ctx => {
       fs.copyFileSync(path.join(DATA_DIR, 'uploads', name), path.join(dir, name)); out.push(`/uploads/${name}`); }
     const reply = parts.filter(x => x.text && !x.thought).map(x => x.text).join('\n').trim();
     if (!out.length && !reply) { lastErr = 'Gemini ما رجّع شي (' + (d?.candidates?.[0]?.finishReason || d?.promptFeedback?.blockReason || '') + ')'; continue; }
+    if (out.length) import('./spend.js').then(S => out.forEach(() => S.recordImage(mdl, cfg.imageConfig.imageSize, p.name, 'الاستوديو'))).catch(() => {});
     return { images: out, text: reply, by: p.name };
   }
   throw new HttpError(400, /quota|billing|exceeded/i.test(lastErr) ? 'Gemini رفض: لازم مفتاح فيه دفع مفعّل' : lastErr);
@@ -550,6 +551,10 @@ r.put('/api/link', async ctx => {
   if (n.enabled) { T.status.target = null; T.startTunnel(config.port); } else T.stopTunnel();
   return { ok: true };
 });
+
+// ===== مصروف Gemini المدفوع (الرصيد بالدولار) =====
+r.get('/api/ai-spend', async ctx => { owner(ctx); const S = await import('./spend.js'); return S.summary(); });
+r.put('/api/ai-spend', async ctx => { owner(ctx); const n = Number(ctx.body.balance); need(n >= 0 && n < 100000, 400, 'اكتب الرصيد بالدولار'); const S = await import('./spend.js'); return S.setBalance(n); });
 
 // ===== التعديل التلقائي من مجلد =====
 r.get('/api/auto', async ctx => {

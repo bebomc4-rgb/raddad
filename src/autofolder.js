@@ -159,6 +159,7 @@ async function processOne(tid, cfg, prod) {
       fs.writeFileSync(outFile, buf);
       const resUrl = toUploads(tid, outFile, 'auto');
       q.run("UPDATE auto_items SET status = 'done', result_url = ?, out_path = ?, by = ?, updated_at = unixepoch() WHERE tenant_id = ? AND product = ?", resUrl, outFile, p.name, tid, prod.name);
+      import('./spend.js').then(S => S.recordImage(cfg.model || 'gemini-nano-banana-2.1', cfg.size || '1K', p.name, 'تعديل تلقائي: ' + prod.name)).catch(() => {});
       console.log(`[auto] ${prod.name} done (${p.name})`);
       if (cfg.mannequin) await mannequinShot(tid, cfg, prod, parts[0], out);
       return;
@@ -189,6 +190,7 @@ async function mannequinShot(tid, cfg, prod, srcPart, out) {
       const outFile = path.join(out, `${prod.name} - مانيكان.png`);
       fs.writeFileSync(outFile, Buffer.from((img.inline_data || img.inlineData).data, 'base64'));
       q.run('UPDATE auto_items SET result2_url = ?, out2_path = ? WHERE tenant_id = ? AND product = ?', toUploads(tid, outFile, 'auto2'), outFile, tid, prod.name);
+      import('./spend.js').then(S => S.recordImage(cfg.model || 'gemini-nano-banana-2.1', cfg.size || '1K', p.name, 'مانيكان: ' + prod.name)).catch(() => {});
       console.log(`[auto] ${prod.name}: mannequin done`);
       return;
     } catch (e) { lastErr = e.message; }
