@@ -567,6 +567,7 @@ r.put('/api/auto', async ctx => {
   const b = ctx.body, patch = {};
   for (const k of ['folder', 'out', 'prompt', 'model', 'size', 'aspect']) if (b[k] !== undefined) patch[k] = clamp(String(b[k]).trim(), 6000);
   if (b.brand !== undefined) patch.brand = !!b.brand;
+  if (b.mannequin !== undefined) patch.mannequin = !!b.mannequin;
   return { cfg: A.setAuto(ctx.tenant.id, patch) };
 });
 r.post('/api/auto/:action', async ctx => {
@@ -578,6 +579,13 @@ r.post('/api/auto/:action', async ctx => {
   else if (a === 'redo') q.run('DELETE FROM auto_items WHERE tenant_id = ? AND product = ?', tid, String(ctx.body.product || ''));
   else if (a === 'reset') q.run('DELETE FROM auto_items WHERE tenant_id = ?', tid);
   else if (a === 'regroup') A.setAuto(tid, { groups: null });
+  else if (a === 'new-folder') { q.run('DELETE FROM auto_items WHERE tenant_id = ?', tid); return A.newUploadFolder(tid, ctx.body.name); }
+  else if (a === 'upload') {
+    const m = String(ctx.body.data || '').match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/);
+    need(m, 400, 'لازم تكون صورة');
+    const buf = Buffer.from(m[2], 'base64'); need(buf.length < 12 * 1024 * 1024, 400, 'الصورة كبيرة');
+    try { A.saveUploadFile(tid, String(ctx.body.rel || ''), buf); } catch (e) { need(false, 400, e.message); }
+  }
   else need(false, 404, 'غير موجود');
   return { ok: true };
 });

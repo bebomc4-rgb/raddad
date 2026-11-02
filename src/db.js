@@ -346,6 +346,11 @@ const migrations = [
   // 20: تصليح إملاء «الشراء»
   `
   UPDATE services SET features = REPLACE(features, 'بعد الشرا معك', 'بعد الشراء معك') WHERE id = 'contacts_old';
+  `,
+  // 21: التعديل التلقائي — صورة تانية لكل منتج على مانيكان (صاحب المنصة، 2 تشرين التاني 2026)
+  `
+  ALTER TABLE auto_items ADD COLUMN result2_url TEXT;
+  ALTER TABLE auto_items ADD COLUMN out2_path TEXT;
   `
 ];
 

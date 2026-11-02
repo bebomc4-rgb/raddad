@@ -1454,6 +1454,7 @@ async function viewBatch() {
 }
 
 // ===== التعديل التلقائي من مجلد =====
+const getAuto_running = d => !!d?.cfg?.running;
 async function viewAuto() {
   const draw = async () => {
     const d = await api('/api/auto'); const c = d.cfg;
@@ -1463,7 +1464,7 @@ async function viewAuto() {
     shell('#/auto', `
       ${mobileTop()}
       <div class="page" style="max-width:1000px">
-        <div class="page-head"><h1>تعديل تلقائي من مجلد</h1><p>حط كل صور المنتجات بمجلد واحد — المنصة بتتعرّف لحالها على صور كل منتج (أو إذا بدك حط كل منتج بمجلد لحاله). بتختار أحسن صورة لكل منتج، بتعدّلها بـ Gemini بالبرومبت الثابت، وبتحفظها لحالها.</p></div>
+        <div class="page-head"><h1>تعديل تلقائي من مجلد</h1><p>كبوس «اختيار المجلد» واختار مجلد الصور من جهازك — المنصة بتتعرّف لحالها على صور كل منتج (أو إذا بدك حط كل منتج بمجلد لحاله). بتختار أحسن صورة لكل منتج، بتعدّلها بـ Gemini بالبرومبت الثابت، وبتحفظها لحالها.</p></div>
         <div class="panel" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;${c.running ? 'border:2px solid #2a9d5c' : ''}">
           <div style="flex:1;min-width:220px">
             <h2 style="margin:0">${c.running && c.grouping ? `🔎 ${esc(c.grouping)}` : c.running ? (c.current ? `🎨 عم يعدّل: <b>${esc(c.current)}</b>` : '▶ شغّال — عم يدوّر عالمنتج الجاي') : '⏸ واقف'}</h2>
@@ -1474,8 +1475,15 @@ async function viewAuto() {
         </div>
         <form class="panel" id="aCfg" style="margin-top:14px">
           <div class="form-grid">
-            <label class="field"><span>مجلد المنتجات (كل منتج مجلد لحاله)</span><input name="folder" dir="ltr" value="${esc(c.folder)}" placeholder="C:\\KO\\products"><small class="${d.folderOk ? '' : 'muted'}">${c.folder ? (d.folderOk ? (d.total ? `✓ ${d.total} منتج` : d.flat ? `✓ ${d.flat} صورة — بكبسة ابدأ بتعرّف على المنتجات لحالي` : 'ما في صور') : '✗ المجلد مو موجود') : ''}</small></label>
-            <label class="field"><span>وين ينحفظوا (اختياري)</span><input name="out" dir="ltr" value="${esc(c.out)}" placeholder="${esc(c.folder ? c.folder + '_edited' : 'C:\\KO\\products_edited')}"></label>
+            <div class="field"><span>مجلد المنتجات</span>
+              <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+                <button type="button" class="btn primary" id="aPick">📁 اختيار المجلد</button>
+                <input type="file" id="aDir" webkitdirectory directory multiple hidden>
+                <span id="aPickNote" class="muted">${c.folder ? esc(c.folder.split(/[\\/]/).pop()) : 'ما في مجلد'}</span>
+              </div>
+              <small class="${d.folderOk ? '' : 'muted'}">${c.folder ? (d.folderOk ? (d.total ? `✓ ${d.total} منتج` : d.flat ? `✓ ${d.flat} صورة — بكبسة ابدأ بتعرّف على المنتجات لحالي` : 'ما في صور') : '✗ المجلد مو موجود — اختارو من جديد') : 'اختار مجلد من جهازك: كل منتج بمجلد لحالو، أو كل الصور سوا وأنا بجمّعهن'}</small>
+              <input type="hidden" name="folder" value="${esc(c.folder)}"><input type="hidden" name="out" value="${esc(c.out)}">
+            </div>
           </div>
           <label class="field"><span>البرومبت الثابت</span><textarea name="prompt" rows="7">${esc(c.prompt)}</textarea></label>
           <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
@@ -1483,6 +1491,7 @@ async function viewAuto() {
             <select name="size">${['1K', '2K', '4K'].map(x => `<option ${c.size === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
             <select name="aspect">${['', '1:1', '4:5', '3:4', '9:16', '16:9'].map(x => `<option value="${x}" ${c.aspect === x ? 'selected' : ''}>${x || 'مقاس تلقائي'}</option>`).join('')}</select>
             <label class="switch"><input type="checkbox" name="brand" ${c.brand ? 'checked' : ''}><span class="track"></span>ابعت لوغو المتجر + الدراغون</label>
+            <label class="switch"><input type="checkbox" name="mannequin" ${c.mannequin ? 'checked' : ''}><span class="track"></span>صورة تانية على مانيكان 🧍</label>
             <span class="spacer"></span><button class="btn primary">حفظ الإعدادات</button>
           </div>
         </form>
@@ -1493,16 +1502,36 @@ async function viewAuto() {
           ${d.items.map(i => `<div class="panel" style="padding:8px">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
               ${i.src_url ? `<img src="${esc(i.src_url)}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px">` : '<div></div>'}
-              ${i.result_url ? `<a href="${esc(i.result_url)}" target="_blank"><img src="${esc(i.result_url)}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px"></a>` : '<div style="aspect-ratio:1;border-radius:8px;background:#0001;display:grid;place-items:center">…</div>'}
+              ${i.result_url ? `<a href="${esc(i.result_url)}" target="_blank"><img src="${esc(i.result_url)}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px"></a>` : '<div style="aspect-ratio:1;border-radius:8px;background:#0001;display:grid;place-items:center">…'}
+                          ${i.result2_url ? `<a href="${esc(i.result2_url)}" target="_blank" style="grid-column:span 2"><img src="${esc(i.result2_url)}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px" title="مانيكان"></a>` : ''}
             </div>
             <div style="margin-top:6px"><b>${esc(i.product)}</b> · ${st[i.status] || i.status}</div>
             ${i.picked ? `<div class="muted" style="font-size:12px">الصورة المختارة: ${esc(i.picked)}</div>` : ''}
             ${i.error ? `<div style="font-size:12px;color:#c33">${esc(i.error)}</div>` : ''}
-            ${i.out_path ? `<div class="muted" style="font-size:11px" dir="ltr">${esc(i.out_path)}</div>` : ''}
-            <div class="row" style="gap:6px;margin-top:6px">${i.result_url ? `<a class="btn small" href="${esc(i.result_url)}" download>تنزيل</a>` : ''}${i.status !== 'working' ? `<button class="btn ghost small" data-redo="${esc(i.product)}">أعد تعديله</button>` : ''}</div>
+            <div class="row" style="gap:6px;margin-top:6px">${i.result_url ? `<a class="btn small" href="${esc(i.result_url)}" download>تنزيل</a>` : ''}${i.result2_url ? `<a class="btn small" href="${esc(i.result2_url)}" download>تنزيل المانيكان</a>` : ''}${i.status !== 'working' ? `<button class="btn ghost small" data-redo="${esc(i.product)}">أعد تعديله</button>` : ''}</div>
           </div>`).join('') || '<p class="muted">لسا ما تعدّل شي.</p>'}
         </div>
       </div>`);
+    // اختيار مجلد من الجهاز ← بينرفع للسيرفر (كل منتج بمجلد فرعي بيضل منتج لحالو)
+    $('#aPick').onclick = () => $('#aDir').click();
+    $('#aDir').onchange = async e => {
+      const files = [...e.target.files].filter(f => /\.(jpe?g|png|webp)$/i.test(f.name));
+      if (!files.length) return toast('ما لقيت صور بهالمجلد');
+      if (getAuto_running(d) && !confirm('التعديل شغّال. وقّفو واختار مجلد جديد؟')) return;
+      const root = (files[0].webkitRelativePath || '').split('/')[0] || 'منتجات';
+      const note = $('#aPickNote'); window.__aUp = true;
+      try {
+        await api('/api/auto/new-folder', { method: 'POST', body: { name: root } });
+        let ok = 0, bad = 0;
+        for (const f of files) {
+          const rel = (f.webkitRelativePath || f.name).split('/').slice(1).join('/') || f.name;
+          try { await api('/api/auto/upload', { method: 'POST', body: { rel, data: await compressImage(f, 2048) } }); ok++; } catch { bad++; }
+          note.textContent = `عم ارفع ${ok + bad} من ${files.length}…`;
+        }
+        toast(`انرفع ${ok} صورة${bad ? ` · ${bad} ما زبطت` : ''}`);
+      } catch (err) { fail(err); }
+      window.__aUp = false; e.target.value = ''; draw();
+    };
     $('#aCfg').onsubmit = e => { e.preventDefault(); busy(e.submitter, async () => { await api('/api/auto', { method: 'PUT', body: formData(e.target) }); toast('انحفظ'); draw(); }); };
     $('#aStart') && ($('#aStart').onclick = e => busy(e.target, async () => { await api('/api/auto', { method: 'PUT', body: formData($('#aCfg')) }); await api('/api/auto/start', { method: 'POST' }); toast('بلّش'); draw(); }));
     $('#aStop') && ($('#aStop').onclick = e => busy(e.target, async () => { await api('/api/auto/stop', { method: 'POST' }); toast('وقف — بيكمّل الصورة الحالية بس'); draw(); }));
@@ -1511,7 +1540,7 @@ async function viewAuto() {
     document.querySelectorAll('[data-redo]').forEach(b => b.onclick = async () => { await api('/api/auto/redo', { method: 'POST', body: { product: b.dataset.redo } }); toast('رح ينعاد'); draw(); });
   };
   await draw();
-  const timer = setInterval(() => { if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) draw().catch(() => {}); }, 10000);
+  const timer = setInterval(() => { if (!window.__aUp && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) draw().catch(() => {}); }, 10000);
   route.cleanup = () => clearInterval(timer);
 }
 

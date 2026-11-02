@@ -10,11 +10,17 @@ import { resolveAI } from './ai.js';
 import { emit } from './events.js';
 
 const IMG = /\.(jpe?g|png|webp)$/i;
+// الصورة التانية لكل منتج: المنتج ملبوس/مستعمل صح على مانيكان (لونو أبيض أو أسود أو رمادي حسب المنتج)
+export const MANNEQUIN_PROMPT = `صور هالمنتج بالزبط متل ما هو بالصورة الأولى، ملبوس أو مستعمل بالطريقة الصحيحة على مانيكان استوديو بلا وجه ولا ملامح.
+اختار جزء المانيكان المناسب للمنتج: جسم كامل للبدلات والملابس الكاملة، جذع للتيشيرتات والجاكيتات، يد للقفازات ولفّات اليد والكفوف، قدم أو ساق للأحذية وواقيات الساق والجوارب، راس للخوذ وواقيات الراس، ورقبة أو صدر للإكسسوارات.
+لون المانيكان أبيض أو أسود أو رمادي مطفي: اختار يلي بيخلّي ألوان المنتج تبيّن أكتر (تباين واضح).
+المنتج لازم يضل نفسو تماماً: نفس الشكل والألوان والشعارات والكتابة والتفاصيل، بلا أي إضافة أو تغيير، وبمقاس طبيعي على المانيكان.
+خلفية استوديو نظيفة، إضاءة احترافية ناعمة، صورة واقعية بدقة عالية متل صور أمازون، المنتج بالنص وواضح.`;
 export const DEFAULT_PROMPT = `اتخيل انك مصور منتجات ب استديو ابيض ولديك جميع انواع الاضائة والكاميرات والعدسات لتصور منتج ليبدو بدقة عالية و فخم و غني وزاوية تصوير احترافية سنمائية واقعية, اظهر تفاصيل الرسمات في المنتج, اريد صورة واحدة, ضع شعار المنتج اسفل يسار الصورة بشكل صغير , مع وضع اللوغو الخاص بالمتجر اسفل يسار الصورة بشكل صغير وضع خط طولي بين شعاري و شعار المنتج وضعهم جانب بعض اريد شعاري على اليسار ثم الخط ثم شعار المنتج, ,الصورة تستخدم معايير التصميمات العالمية, لاتظهر معدات التصوير و الاضائة في الصورة, صور المنتج من عدة زوايا و اظهر التفاصيل الدقيقية والعامة , لاتضيف اي شيئ على المنتج الاصلي , اجعل المنتج 3d واقعي, اريد خلفية احترافية تليق بالمنتج واريد فقط صورة المنتج قطعة واحدة , الخلفية تكون مثل الهوية البصرية للمنتج و جذابة تخلي الزبون يطلبها فورا, ابعاد الصورة 1:1 , ضع المنتج منتصف الصورة مثل صور امازون وعلي بابا , مع هوية بصرية خاصة بالمنتج واضائة خاصة بالمنتج و مؤثرات بصرية تعكس القوة, الخلفية انت اختار واحدة او اثنتين فقط من : دخان ابيض او اضائة او غبار او ماء او ثلج او شرارة او رياح او سرعة او ضباب او اختفاء, اضائة ملونة.`;
 
 const key = tid => `auto_${tid}`;
 export function getAuto(tid) {
-  const c = { folder: '', out: '', prompt: DEFAULT_PROMPT, model: 'gemini-nano-banana-2.1', size: '1K', aspect: '1:1', brand: true, running: false, current: null, ...getSetting(key(tid), {}) };
+  const c = { folder: '', out: '', prompt: DEFAULT_PROMPT, model: 'gemini-nano-banana-2.1', size: '1K', aspect: '1:1', brand: true, mannequin: false, running: false, current: null, ...getSetting(key(tid), {}) };
   // صاحب المتجر (2 تشرين التاني 2026): الموديل الأرخص Nano Banana 2.1 بدقة 1K (بدل Pro بـ 2K) — مرة وحدة للإعدادات القديمة
   if (!c.cheap21) { c.model = 'gemini-nano-banana-2.1'; c.size = '1K'; c.cheap21 = true; try { setSetting(key(tid), { ...getSetting(key(tid), {}), model: c.model, size: c.size, cheap21: true }); } catch {} }
   return c;
@@ -154,12 +160,59 @@ async function processOne(tid, cfg, prod) {
       const resUrl = toUploads(tid, outFile, 'auto');
       q.run("UPDATE auto_items SET status = 'done', result_url = ?, out_path = ?, by = ?, updated_at = unixepoch() WHERE tenant_id = ? AND product = ?", resUrl, outFile, p.name, tid, prod.name);
       console.log(`[auto] ${prod.name} done (${p.name})`);
+      if (cfg.mannequin) await mannequinShot(tid, cfg, prod, parts[0], out);
       return;
     } catch (e) { lastErr = e.message; }
   }
   q.run("UPDATE auto_items SET status = 'error', error = ?, updated_at = unixepoch() WHERE tenant_id = ? AND product = ?", String(lastErr).slice(0, 300), tid, prod.name);
   console.error(`[auto] ${prod.name}: ${lastErr}`);
   if (/quota|billing|exceeded|credit/i.test(lastErr)) setAuto(tid, { running: false, current: null, stopReason: 'الرصيد أو الحصة خلصت: ' + String(lastErr).slice(0, 120) });
+}
+
+// الصورة التانية: المنتج على مانيكان (نفس الصورة الأصلية + اللوغو إذا مفعّل)
+async function mannequinShot(tid, cfg, prod, srcPart, out) {
+  const tenant = getTenant(tid);
+  const parts = [srcPart];
+  let logoNote = '';
+  if (cfg.brand) {
+    const f = path.join(DATA_DIR, 'brand', String(tid), 'logo.png');
+    if (fs.existsSync(f)) { parts.push(part({ mime: 'image/png', data: fs.readFileSync(f).toString('base64') })); logoNote = '\nحط لوغو المتجر (الصورة التانية) صغير أسفل يسار الصورة.'; }
+  }
+  parts.push({ text: MANNEQUIN_PROMPT + logoNote });
+  const body = { contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'], imageConfig: { ...(cfg.aspect ? { aspectRatio: cfg.aspect } : {}), imageSize: cfg.size || '1K' } } };
+  let lastErr = '';
+  for (const p of geminiKeys(tenant)) {
+    try {
+      const d = await gemini(p, cfg.model || 'gemini-nano-banana-2.1', body);
+      const img = (d?.candidates?.[0]?.content?.parts || []).find(x => !x.thought && (x.inline_data || x.inlineData));
+      if (!img) { lastErr = 'ما رجّع صورة مانيكان'; continue; }
+      const outFile = path.join(out, `${prod.name} - مانيكان.png`);
+      fs.writeFileSync(outFile, Buffer.from((img.inline_data || img.inlineData).data, 'base64'));
+      q.run('UPDATE auto_items SET result2_url = ?, out2_path = ? WHERE tenant_id = ? AND product = ?', toUploads(tid, outFile, 'auto2'), outFile, tid, prod.name);
+      console.log(`[auto] ${prod.name}: mannequin done`);
+      return;
+    } catch (e) { lastErr = e.message; }
+  }
+  console.error(`[auto] ${prod.name} mannequin: ${lastErr}`);
+}
+
+// رفع مجلد من المتصفح (المجيب عالسيرفر وما بيشوف مجلدات الكمبيوتر): data/auto-src/<المتجر>/<اسم المجلد>/...
+const safe = s => String(s || '').replace(/[\\:*?"<>|\x00-\x1f]+/g, '-').replace(/^\.+/, '').trim().slice(0, 80);
+export function newUploadFolder(tid, name) {
+  const nm = safe(name) || 'منتجات';
+  const folder = path.join(DATA_DIR, 'auto-src', String(tid), nm), out = path.join(DATA_DIR, 'auto-out', String(tid), nm);
+  fs.rmSync(folder, { recursive: true, force: true }); fs.mkdirSync(folder, { recursive: true }); fs.mkdirSync(out, { recursive: true });
+  setAuto(tid, { folder, out, groups: null, running: false, stopReason: null });
+  return { folder, name: nm };
+}
+export function saveUploadFile(tid, rel, buf) {
+  const cfg = getAuto(tid), base = path.join(DATA_DIR, 'auto-src', String(tid));
+  if (!cfg.folder || !cfg.folder.startsWith(base)) throw new Error('اختار المجلد من جديد');
+  const parts = String(rel || '').split(/[\\/]+/).map(safe).filter(Boolean).slice(-2); // مجلد المنتج (إذا في) + اسم الصورة
+  if (!parts.length || !IMG.test(parts[parts.length - 1])) throw new Error('مو صورة');
+  const f = path.join(cfg.folder, ...parts);
+  if (!f.startsWith(cfg.folder)) throw new Error('مسار غلط');
+  fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, buf);
 }
 
 let busy = false;
