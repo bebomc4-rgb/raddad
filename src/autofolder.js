@@ -204,7 +204,7 @@ export function newUploadFolder(tid, name) {
   const nm = safe(name) || 'منتجات';
   const folder = path.join(DATA_DIR, 'auto-src', String(tid), nm), out = path.join(DATA_DIR, 'auto-out', String(tid), nm);
   fs.rmSync(folder, { recursive: true, force: true }); fs.mkdirSync(folder, { recursive: true }); fs.mkdirSync(out, { recursive: true });
-  setAuto(tid, { folder, out, groups: null, running: false, stopReason: null });
+  setAuto(tid, { folder, out, groups: null, running: false, stopReason: null, uploading: true });
   return { folder, name: nm };
 }
 export function saveUploadFile(tid, rel, buf) {
@@ -226,6 +226,7 @@ async function tick() {
     if (!cfg.running) continue;
     const done = new Set(q.all("SELECT product FROM auto_items WHERE tenant_id = ? AND status IN ('done','error')", tid).map(x => x.product));
     let prods = listProducts(cfg.folder, tid);
+    if (!prods.length && cfg.uploading) continue; // صور بمجلد واحد عم تنرفع: منجمّعهن بعد ما يخلص الرفع
     if (!prods.length && flatImages(cfg.folder).length) { // كل الصور بمجلد واحد ← منجمّعهن أول مرة
       busy = true;
       try { setAuto(tid, { current: null, grouping: 'عم اتعرّف على المنتجات…' });
@@ -235,6 +236,7 @@ async function tick() {
       return;
     }
     const next = prods.find(p => !done.has(p.name));
+    if (!next && cfg.uploading) continue; // الصور لسا عم تنرفع من الجهاز: منستنّى المنتج الجاي
     if (!next) { setAuto(tid, { running: false, current: null, stopReason: 'خلصت كل المنتجات ✅' }); continue; }
     busy = true;
     try { await processOne(tid, cfg, next); } catch (e) { console.error('[auto]', e.message); }

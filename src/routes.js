@@ -584,6 +584,7 @@ r.post('/api/auto/:action', async ctx => {
   else if (a === 'redo') q.run('DELETE FROM auto_items WHERE tenant_id = ? AND product = ?', tid, String(ctx.body.product || ''));
   else if (a === 'reset') q.run('DELETE FROM auto_items WHERE tenant_id = ?', tid);
   else if (a === 'regroup') A.setAuto(tid, { groups: null });
+  else if (a === 'upload-done') A.setAuto(tid, { uploading: false });
   else if (a === 'new-folder') { q.run('DELETE FROM auto_items WHERE tenant_id = ?', tid); return A.newUploadFolder(tid, ctx.body.name); }
   else if (a === 'upload') {
     const m = String(ctx.body.data || '').match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/);

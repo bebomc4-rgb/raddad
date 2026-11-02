@@ -1499,7 +1499,7 @@ async function viewAuto() {
                 <input type="file" id="aDir" webkitdirectory directory multiple hidden>
                 <span id="aPickNote" class="muted">${c.folder ? esc(c.folder.split(/[\\/]/).pop()) : 'ما في مجلد'}</span>
               </div>
-              <small class="${d.folderOk ? '' : 'muted'}">${c.folder ? (d.folderOk ? (d.total ? `✓ ${d.total} منتج` : d.flat ? `✓ ${d.flat} صورة — بكبسة ابدأ بتعرّف على المنتجات لحالي` : 'ما في صور') : '✗ المجلد مو موجود — اختارو من جديد') : 'اختار مجلد من جهازك: كل منتج بمجلد لحالو، أو كل الصور سوا وأنا بجمّعهن'}</small>
+              <small class="${d.folderOk ? '' : 'muted'}">${c.folder ? (d.folderOk ? (d.total ? `✓ ${d.total} منتج` : d.flat ? `✓ ${d.flat} صورة — بكبسة ابدأ بتعرّف على المنتجات لحالي` : 'ما في صور') : '✗ المجلد مو موجود — اختارو من جديد') : 'اختار مجلد من جهازك (المتصفح بيفرجيك المجلدات بس، مو الصور — هيك طبيعي). إذا كل منتج بمجلد لحالو، بختار أحسن صورة عالجهاز وبرفع هي بس وببلّش فوراً'}</small>
               <input type="hidden" name="folder" value="${esc(c.folder)}"><input type="hidden" name="out" value="${esc(c.out)}">
             </div>
           </div>
@@ -1538,16 +1538,23 @@ async function viewAuto() {
       if (!files.length) return toast('ما لقيت صور بهالمجلد');
       if (getAuto_running(d) && !confirm('التعديل شغّال. وقّفو واختار مجلد جديد؟')) return;
       const root = (files[0].webkitRelativePath || '').split('/')[0] || 'منتجات';
+      const relOf = f => (f.webkitRelativePath || f.name).split('/').slice(1);
+      // كل منتج بمجلد فرعي ← منختار أحسن صورة عالجهاز (الأكبر = الأوضح) ومنرفع هي بس، والتعديل بيبلّش فوراً
+      const prods = new Map();
+      for (const f of files) { const r = relOf(f); if (r.length >= 2) { const k = r[r.length - 2]; const cur = prods.get(k); if (!cur || f.size > cur.size) prods.set(k, f); } }
+      const sub = prods.size > 0;
+      const todo = sub ? [...prods].map(([k, f]) => ({ rel: `${k}/${f.name}`, f, max: 2048 })) : files.map(f => ({ rel: f.name, f, max: 1280 }));
       const note = $('#aPickNote'); window.__aUp = true;
       try {
         await api('/api/auto/new-folder', { method: 'POST', body: { name: root } });
-        let ok = 0, bad = 0;
-        for (const f of files) {
-          const rel = (f.webkitRelativePath || f.name).split('/').slice(1).join('/') || f.name;
-          try { await api('/api/auto/upload', { method: 'POST', body: { rel, data: await compressImage(f, 2048) } }); ok++; } catch { bad++; }
-          note.textContent = `عم ارفع ${ok + bad} من ${files.length}…`;
-        }
-        toast(`انرفع ${ok} صورة${bad ? ` · ${bad} ما زبطت` : ''}`);
+        if (sub) { await api('/api/auto', { method: 'PUT', body: formData($('#aCfg')) }).catch(() => {}); await api('/api/auto/start', { method: 'POST' }).catch(() => {}); }
+        let ok = 0, bad = 0, i = 0;
+        const worker = async () => { while (i < todo.length) { const t = todo[i++];
+          try { await api('/api/auto/upload', { method: 'POST', body: { rel: t.rel, data: await compressImage(t.f, t.max) } }); ok++; } catch { bad++; }
+          note.textContent = sub ? `رفعت ${ok + bad} من ${todo.length} منتج (أحسن صورة لكل منتج) — التعديل شغّال` : `عم ارفع ${ok + bad} من ${todo.length} صورة…`; } };
+        await Promise.all([worker(), worker(), worker()]); // 3 بنفس الوقت
+        await api('/api/auto/upload-done', { method: 'POST' });
+        toast(`انرفع ${ok}${sub ? ' منتج' : ' صورة'}${bad ? ` · ${bad} ما زبطت` : ''}`);
       } catch (err) { fail(err); }
       window.__aUp = false; e.target.value = ''; draw();
     };
