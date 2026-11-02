@@ -1485,7 +1485,7 @@ async function viewAuto() {
         <div id="spendBox"></div>
         <div class="panel" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;${c.running ? 'border:2px solid #2a9d5c' : ''}">
           <div style="flex:1;min-width:220px">
-            <h2 style="margin:0">${c.running && c.grouping ? `🔎 ${esc(c.grouping)}` : c.running ? (c.current ? `🎨 عم يعدّل: <b>${esc(c.current)}</b>` : '▶ شغّال — عم يدوّر عالمنتج الجاي') : '⏸ واقف'}</h2>
+            <h2 style="margin:0">${c.running && c.uploading && !d.total ? '⬆️ عم تنرفع الصور — أول ما يخلص الرفع بتعرّف على المنتجات وببلّش' : c.running && c.grouping ? `🔎 ${esc(c.grouping)}` : c.running ? (c.current ? `🎨 عم يعدّل: <b>${esc(c.current)}</b>` : '▶ شغّال — عم يدوّر عالمنتج الجاي') : '⏸ واقف'}</h2>
             <div class="muted">${done} خلص من ${d.total} منتج${err ? ` · ${err} ما زبط` : ''}${!c.running && c.stopReason ? ` · ${esc(c.stopReason)}` : ''}</div>
           </div>
           ${c.running ? '<button class="btn danger" id="aStop">⏹ إيقاف</button>' : '<button class="btn primary" id="aStart">▶ ابدأ</button>'}

@@ -215,8 +215,10 @@ export function saveUploadFile(tid, rel, buf) {
   const f = path.join(cfg.folder, ...parts);
   if (!f.startsWith(cfg.folder)) throw new Error('مسار غلط');
   fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, buf);
+  lastUpload.set(tid, Date.now());
 }
 
+const lastUpload = new Map(); // آخر صورة وصلت لكل متجر
 let busy = false;
 async function tick() {
   if (busy) return;
@@ -224,6 +226,8 @@ async function tick() {
   for (const r of rows) {
     const tid = Number(r.key.slice(5)); const cfg = getAuto(tid);
     if (!cfg.running) continue;
+    // الرفع وقف (سكّر الصفحة أو انقطع النت) أكتر من دقيقتين: منكمّل بيلي وصل
+    if (cfg.uploading && Date.now() - (lastUpload.get(tid) || 0) > 120_000) { setAuto(tid, { uploading: false }); cfg.uploading = false; }
     const done = new Set(q.all("SELECT product FROM auto_items WHERE tenant_id = ? AND status IN ('done','error')", tid).map(x => x.product));
     let prods = listProducts(cfg.folder, tid);
     if (!prods.length && cfg.uploading) continue; // صور بمجلد واحد عم تنرفع: منجمّعهن بعد ما يخلص الرفع
