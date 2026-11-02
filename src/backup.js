@@ -14,7 +14,7 @@ const KEEP = 7;
 const KDIR = path.join(DATA_DIR, 'backup-key'), KEY = path.join(KDIR, 'id_ed25519');
 const WORK = path.join(DATA_DIR, 'backup-repo');
 const STATUS = path.join(DATA_DIR, 'backup-status.json');
-const SKIP = new Set(['wa-sessions', 'uploads', 'auto-src', 'auto-out', 'brand', 'backups', 'backup-key', 'backup-repo', 'exports', 'raddad.db', 'raddad.db-wal', 'raddad.db-shm']);
+const SKIP = new Set(['wa-sessions', 'uploads', 'auto-src', 'auto-out', 'backups', 'backup-key', 'backup-repo', 'exports', 'raddad.db', 'raddad.db-wal', 'raddad.db-shm']);
 
 export function backupKey() {
   try {
