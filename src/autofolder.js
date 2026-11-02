@@ -167,7 +167,13 @@ async function processOne(tid, cfg, prod) {
   }
   q.run("UPDATE auto_items SET status = 'error', error = ?, updated_at = unixepoch() WHERE tenant_id = ? AND product = ?", String(lastErr).slice(0, 300), tid, prod.name);
   console.error(`[auto] ${prod.name}: ${lastErr}`);
-  if (/quota|billing|exceeded|credit/i.test(lastErr)) setAuto(tid, { running: false, current: null, stopReason: 'الرصيد أو الحصة خلصت: ' + String(lastErr).slice(0, 120) });
+  if (/depleted|billing|credit|payment/i.test(lastErr)) setAuto(tid, { running: false, current: null, stopReason: 'الرصيد خلص: ' + String(lastErr).slice(0, 120) });
+  else if (/quota|exceeded|RESOURCE_EXHAUSTED|429|rate/i.test(lastErr)) { // حد Google بالدقيقة/باليوم (مو الرصيد): منستنّى ومنرجع نكمّل لحالنا
+    q.run('DELETE FROM auto_items WHERE tenant_id = ? AND product = ?', tid, prod.name);
+    const mins = /per day|daily|PerDay/i.test(lastErr) ? 60 : 10;
+    setAuto(tid, { pauseUntil: Date.now() + mins * 60_000, stopReason: `Google حدّد عدد الصور هلّق — بكمّل لحالي بعد ${mins} دقيقة` });
+    console.error(`[auto] rate limit — pausing ${mins} min`);
+  }
 }
 
 // الصورة التانية: المنتج على مانيكان (نفس الصورة الأصلية + اللوغو إذا مفعّل)
@@ -226,6 +232,7 @@ async function tick() {
   for (const r of rows) {
     const tid = Number(r.key.slice(5)); const cfg = getAuto(tid);
     if (!cfg.running) continue;
+    if (cfg.pauseUntil && Date.now() < cfg.pauseUntil) continue;
     // الرفع وقف (سكّر الصفحة أو انقطع النت) أكتر من دقيقتين: منكمّل بيلي وصل
     if (cfg.uploading && Date.now() - Math.max(lastUpload.get(tid) || 0, (() => { try { return fs.statSync(cfg.folder).mtimeMs; } catch { return 0; } })()) > 120_000) { setAuto(tid, { uploading: false }); cfg.uploading = false; }
     const done = new Set(q.all("SELECT product FROM auto_items WHERE tenant_id = ? AND status IN ('done','error')", tid).map(x => x.product));
@@ -249,6 +256,11 @@ async function tick() {
   }
 }
 export function startAutoWorker() {
+  // وقف بسبب حد Google (مو الرصيد) قبل التصليح: منرجّعو يكمّل لحالو
+  for (const r of q.all("SELECT key FROM platform_settings WHERE key LIKE 'auto_%'")) {
+    const tid = Number(r.key.slice(5)), c = getAuto(tid);
+    if (!c.running && /You exceeded your current quota/i.test(c.stopReason || '') && !/depleted|billing/i.test(c.stopReason || '')) setAuto(tid, { running: true, stopReason: null, pauseUntil: null });
+  }
   q.run("UPDATE auto_items SET status = 'queued' WHERE status = 'working'");
   setInterval(tick, 8000);
 }

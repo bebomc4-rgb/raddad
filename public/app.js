@@ -1490,6 +1490,7 @@ async function viewAuto() {
           </div>
           ${c.running ? '<button class="btn danger" id="aStop">⏹ إيقاف</button>' : '<button class="btn primary" id="aStart">▶ ابدأ</button>'}
           ${err ? '<button class="btn small" id="aRetry">أعد يلي ما زبطوا</button>' : ''}
+          ${done ? '<a class="btn small" href="/api/auto/zip" download>⬇️ نزّل كل الصور (ZIP)</a>' : ''}
         </div>
         <form class="panel" id="aCfg" style="margin-top:14px">
           <div class="form-grid">

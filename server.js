@@ -158,6 +158,7 @@ const server = http.createServer(async (req, res) => {
       };
       let out;
       for (const h of m.handlers) out = await h(ctx);
+      if (out && Buffer.isBuffer(out.__file)) { res.writeHead(200, { 'Content-Type': out.type || 'application/octet-stream', 'Content-Length': out.__file.length, 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(out.filename || 'file')}`, 'Cache-Control': 'no-store' }); return res.end(out.__file); }
       return json(res, 200, out ?? { ok: true });
     }
 

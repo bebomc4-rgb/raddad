@@ -566,6 +566,17 @@ r.get('/api/auto', async ctx => {
   const items = q.all('SELECT * FROM auto_items WHERE tenant_id = ? ORDER BY updated_at DESC LIMIT 500', ctx.tenant.id);
   return { cfg: { ...cfg, groups: undefined }, total: prods.length, flat, groups: prods.map(p => ({ name: p.name, n: p.files.length })), folderOk: !!cfg.folder && fs.existsSync(cfg.folder), items };
 });
+// كل الصور المعدّلة بملف ZIP واحد (المجلد عالسيرفر)
+r.get('/api/auto/zip', async ctx => {
+  owner(ctx);
+  const A = await import('./autofolder.js'), { makeZip } = await import('./zip.js');
+  const c = A.getAuto(ctx.tenant.id);
+  need(c.out && fs.existsSync(c.out), 404, 'لسا ما في صور معدّلة');
+  const files = fs.readdirSync(c.out).filter(f => /\.(png|jpe?g|webp)$/i.test(f)).sort();
+  need(files.length, 404, 'لسا ما في صور معدّلة');
+  const name = (path.basename(c.out) || 'KO') + ' - معدّل.zip';
+  return { __file: makeZip(files.map(f => ({ name: f, data: fs.readFileSync(path.join(c.out, f)) }))), type: 'application/zip', filename: name };
+});
 r.put('/api/auto', async ctx => {
   owner(ctx);
   const A = await import('./autofolder.js');
@@ -579,7 +590,7 @@ r.put('/api/auto', async ctx => {
 r.post('/api/auto/:action', async ctx => {
   owner(ctx);
   const A = await import('./autofolder.js'); const tid = ctx.tenant.id; const a = ctx.params.action;
-  if (a === 'start') { const c = A.getAuto(tid); need(c.folder && fs.existsSync(c.folder), 400, 'اختار المجلد من زر «📁 اختيار المجلد» أول'); A.setAuto(tid, { running: true, stopReason: null }); }
+  if (a === 'start') { const c = A.getAuto(tid); need(c.folder && fs.existsSync(c.folder), 400, 'اختار المجلد من زر «📁 اختيار المجلد» أول'); A.setAuto(tid, { running: true, stopReason: null, pauseUntil: null }); }
   else if (a === 'stop') A.setAuto(tid, { running: false, stopReason: 'وقّفتها انت' });
   else if (a === 'retry') q.run("DELETE FROM auto_items WHERE tenant_id = ? AND status = 'error'", tid);
   else if (a === 'redo') q.run('DELETE FROM auto_items WHERE tenant_id = ? AND product = ?', tid, String(ctx.body.product || ''));
