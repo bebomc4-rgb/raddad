@@ -1500,7 +1500,6 @@ async function viewAuto() {
                 <span id="aPickNote" class="muted">${c.folder ? esc(c.folder.split(/[\\/]/).pop()) : 'ما في مجلد'}</span>
               </div>
               <small class="${d.folderOk ? '' : 'muted'}">${c.folder ? (d.folderOk ? (d.total ? `✓ ${d.total} منتج` : d.flat ? `✓ ${d.flat} صورة — بكبسة ابدأ بتعرّف على المنتجات لحالي` : 'ما في صور') : '✗ المجلد مو موجود — اختارو من جديد') : 'اختار مجلد من جهازك (المتصفح بيفرجيك المجلدات بس، مو الصور — هيك طبيعي). إذا كل منتج بمجلد لحالو، بختار أحسن صورة عالجهاز وبرفع هي بس وببلّش فوراً'}</small>
-              <input type="hidden" name="folder" value="${esc(c.folder)}"><input type="hidden" name="out" value="${esc(c.out)}">
             </div>
           </div>
           <label class="field"><span>البرومبت الثابت</span><textarea name="prompt" rows="7">${esc(c.prompt)}</textarea></label>

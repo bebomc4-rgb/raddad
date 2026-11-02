@@ -570,7 +570,8 @@ r.put('/api/auto', async ctx => {
   owner(ctx);
   const A = await import('./autofolder.js');
   const b = ctx.body, patch = {};
-  for (const k of ['folder', 'out', 'prompt', 'model', 'size', 'aspect']) if (b[k] !== undefined) patch[k] = clamp(String(b[k]).trim(), 6000);
+  // المجلد بيتحدد بس من «اختيار المجلد» (رفع للسيرفر) — الفورم ما بيغيّرو (كان يرجّع مسار الكمبيوتر القديم)
+  for (const k of ['prompt', 'model', 'size', 'aspect']) if (b[k] !== undefined) patch[k] = clamp(String(b[k]).trim(), 6000);
   if (b.brand !== undefined) patch.brand = !!b.brand;
   if (b.mannequin !== undefined) patch.mannequin = !!b.mannequin;
   return { cfg: A.setAuto(ctx.tenant.id, patch) };
@@ -578,7 +579,7 @@ r.put('/api/auto', async ctx => {
 r.post('/api/auto/:action', async ctx => {
   owner(ctx);
   const A = await import('./autofolder.js'); const tid = ctx.tenant.id; const a = ctx.params.action;
-  if (a === 'start') { const c = A.getAuto(tid); need(c.folder && fs.existsSync(c.folder), 400, 'المجلد مو موجود — تأكد من المسار'); A.setAuto(tid, { running: true, stopReason: null }); }
+  if (a === 'start') { const c = A.getAuto(tid); need(c.folder && fs.existsSync(c.folder), 400, 'اختار المجلد من زر «📁 اختيار المجلد» أول'); A.setAuto(tid, { running: true, stopReason: null }); }
   else if (a === 'stop') A.setAuto(tid, { running: false, stopReason: 'وقّفتها انت' });
   else if (a === 'retry') q.run("DELETE FROM auto_items WHERE tenant_id = ? AND status = 'error'", tid);
   else if (a === 'redo') q.run('DELETE FROM auto_items WHERE tenant_id = ? AND product = ?', tid, String(ctx.body.product || ''));
