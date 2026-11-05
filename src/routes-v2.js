@@ -518,6 +518,7 @@ r.get('/api/admin/v2/payments', ctx => {
 // كود تأكيد رقم زبون متجر KO SPORT (الطلب موقّع من الموقع)
 r.post('/api/otp/ko', async ctx => (await import('./otp.js')).koOtp(ctx.body));
 r.post('/api/otp/ko-open', async ctx => (await import('./otp.js')).koOpen(ctx.body));
+r.post('/api/otp/ko-notify', async ctx => (await import('./otp.js')).koNotify(ctx.body));
 r.post('/api/otp/ko-claim', async ctx => (await import('./otp.js')).koClaim(ctx.body));
 
 export { isSuperTenant };

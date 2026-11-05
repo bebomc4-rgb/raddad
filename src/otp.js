@@ -50,6 +50,19 @@ function fresh(ts, nonce) {
 const open = new Map(); // رمز → { at, phone }
 const early = new Map(); // رمز وصل بالواتساب قبل ما الموقع يلحق يفتحو (ثواني) → { at, phone }
 setInterval(() => { const n = Date.now(); for (const [k, v] of open) if (n - v.at > 20 * 60_000) open.delete(k); for (const [k, v] of early) if (n - v.at > 30 * 60_000) early.delete(k); }, 60_000).unref();
+// طلب جديد بموقع KO SPORT: الموقع بيبعت نص الطلب موقّع، والمجيب بيبعتو واتساب لأرقام صاحب المتجر (صاحب المتجر، 5 تشرين التاني 2026)
+export async function koNotify(body) {
+  const { to, text, ts, nonce, sig } = body || {};
+  const n = intl(to || '');
+  need(n.length >= 9 && typeof text === 'string' && text.length > 0 && text.length < 6000, 400, 'ناقص'); fresh(ts, nonce);
+  need(await verify(`notify|${n}|${text}|${ts}|${nonce}`, sig), 403, 'توقيع غلط');
+  seen.set(nonce, Date.now());
+  const allowed = (getSetting('ko_order_notify', ['963938986875']) || []).map(x => intl(x));
+  need(allowed.includes(n), 403, 'الرقم مو مسموح');
+  const ok = await sendFromPlatform(n, text);
+  console.log(`[ko-notify] order message to ${n}: ${ok ? 'sent' : 'NOT sent'}`);
+  return { ok };
+}
 export async function koOpen(body) {
   try { return await koOpen_(body); } catch (e) { console.error('[ko-otp] open failed:', e.message, '| clock skew ms:', Date.now() - Number(body?.ts)); throw e; }
 }
