@@ -78,6 +78,41 @@ const server = http.createServer(async (req, res) => {
 
     // مين شغّال هلق (الكمبيوتر ولا الموبايل الاحتياط) — بيسألو الموبايل كل 30 ثانية
     if (pathname === '/api/whoami') return json(res, 200, { ...failoverStatus(), version: CODE_VERSION });
+    // KO SPORT: كل مناطق دمشق وريف دمشق من OpenStreetMap (أسماء أماكن عامة، بلا معلومات شخصية).
+    // Cloudflare ممنوع من Overpass، فالسيرفر بيجيبها وبيحفظها 30 يوم، وموقع KO بيقراها من هون.
+    if (pathname === '/api/ko-places') {
+      const f = path.join(DATA_DIR, 'ko-places.json');
+      let c = null; try { c = JSON.parse(fs.readFileSync(f, 'utf8')); } catch {}
+      const fresh = c && c.list && c.list.length > 200 && Date.now() - c.at < 30 * 864e5;
+      if (!fresh && !globalThis.__koPlacesBusy && Date.now() - (globalThis.__koPlacesTry || 0) > 10 * 60_000) {
+        globalThis.__koPlacesBusy = true; globalThis.__koPlacesTry = Date.now();
+        const Q = '[out:json][timeout:180];(area["ISO3166-2"="SY-DI"];area["ISO3166-2"="SY-RD"];)->.a;nwr["place"~"^(city|town|village|hamlet|suburb|quarter|neighbourhood|city_block|locality)$"](area.a);out tags center;';
+        (async () => {
+          const errs = [];
+          for (const u of ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter']) {
+            try {
+              const r = await fetch(u, { method: 'POST', body: 'data=' + encodeURIComponent(Q), headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'KO-SPORT-delivery/1.0 (ko-sport.online)' }, signal: AbortSignal.timeout(200_000) });
+              if (!r.ok) { errs.push(u + ' ' + r.status); continue; }
+              const j = await r.json(), list = [];
+              const cl = (x) => String(x || '').replace(/\s+/g, ' ').trim();
+              for (const e of j.elements || []) {
+                const t = e.tags || {}, lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
+                const ar = cl(t['name:ar'] || (/[\u0600-\u06FF]/.test(t.name || '') ? t.name : ''));
+                if (!ar || !lat) continue;
+                const al = [t.name, t.alt_name, t['alt_name:ar'], t['old_name:ar'], t['short_name:ar'], t['name:en']].map(cl).filter((x) => x && x !== ar).join('|').replace(/;/g, '|');
+                list.push([ar, +(+lat).toFixed(5), +(+lng).toFixed(5), al, t.place]);
+              }
+              if (list.length > 200) { fs.writeFileSync(f, JSON.stringify({ at: Date.now(), list })); console.log('[ko-places]', list.length, 'places'); return; }
+              errs.push(u + ' few ' + list.length);
+            } catch (e) { errs.push(u + ' ' + e.message); }
+          }
+          console.error('[ko-places] failed', errs.join(' | '));
+          globalThis.__koPlacesErr = errs.join(' | ');
+        })().finally(() => { globalThis.__koPlacesBusy = false; });
+      }
+      res.setHeader('access-control-allow-origin', '*');
+      return json(res, 200, c ? { at: c.at, n: c.list.length, list: c.list } : { at: 0, n: 0, list: [], busy: !!globalThis.__koPlacesBusy, err: globalThis.__koPlacesErr || '' });
+    }
     // سجل السيرفر مشفّر (لحتى المساعد يقرا السجل بلا ما صاحب المتجر يكتب أوامر): مشفّر بالمفتاح العام deploy/diag.pub.pem،
     // ما حدا بيقدر يقراه غير يلي معو المفتاح الخاص. GitHub بيجيبو بعد كل تعديل
     if (pathname === '/api/diag') {
