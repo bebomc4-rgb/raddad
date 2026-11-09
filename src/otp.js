@@ -105,7 +105,7 @@ export function waClaim(text, phone, hidden) {
 
 export async function koOtp(body) {
   const { phone, code, ts, nonce, sig } = body || {};
-  need(/^09\d{8}$/.test(phone || '') && /^\d{6}$/.test(code || '') && /^[A-Za-z0-9_-]{8,40}$/.test(nonce || '') && sig, 400, 'طلب ناقص');
+  need(/^(09\d{8}|\+[1-9]\d{7,14})$/.test(phone || '') && /^\d{6}$/.test(code || '') && /^[A-Za-z0-9_-]{8,40}$/.test(nonce || '') && sig, 400, 'طلب ناقص');
   need(Math.abs(Date.now() - Number(ts)) < 120_000, 400, 'انتهى وقت الطلب');
   need(!seen.has(nonce), 409, 'مكرر');
   const data = Buffer.from(`${phone}|${code}|${ts}|${nonce}`), s = Buffer.from(String(sig), 'base64url');
