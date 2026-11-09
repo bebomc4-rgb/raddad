@@ -63,6 +63,19 @@ export async function koNotify(body) {
   console.log(`[ko-notify] order message to ${n}: ${ok ? 'sent' : 'NOT sent'}`);
   return { ok };
 }
+// أسماء زباين الموقع (حساب جديد، أو كل الحسابات مرة وحدة): الموقع بيبعتها موقّعة، والمجيب بيحفظ الرقم باسمو بدل «زبون XXXX»
+export async function koContacts(body) {
+  const { text, ts, nonce, sig } = body || {};
+  need(typeof text === 'string' && text.length > 2 && text.length < 200_000, 400, 'ناقص'); fresh(ts, nonce);
+  need(await verify(`contacts|${text}|${ts}|${nonce}`, sig), 403, 'توقيع غلط');
+  seen.set(nonce, Date.now());
+  let list = []; try { list = JSON.parse(text); } catch {} need(Array.isArray(list), 400, 'ناقص');
+  const { siteNames } = await import('./whatsapp/baileys.js');
+  const KO = Number(process.env.KO_TENANT_ID || 1);
+  const n = siteNames(KO, list.slice(0, 3000).map(x => ({ phone: intl(x.phone || ''), name: x.name })));
+  console.log(`[ko-contacts] ${n} names from the site`);
+  return { ok: true, n };
+}
 export async function koOpen(body) {
   try { return await koOpen_(body); } catch (e) { console.error('[ko-otp] open failed:', e.message, '| clock skew ms:', Date.now() - Number(body?.ts)); throw e; }
 }

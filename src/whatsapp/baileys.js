@@ -505,6 +505,20 @@ export async function setRealName(tenantId, phone, name, area = '') {
   realNames[key] = nm; clearTimeout(namesT); namesT = setTimeout(() => { try { fs.writeFileSync(NAMES_FILE, JSON.stringify(realNames)); } catch {} }, 1500);
   return saveContact(tenantId, num, nm, true);
 }
+// أسماء زباين موقع KO SPORT (يلي سجّلو حساب): «الاسم المحافظة» متل ما بيكتبهن صاحب المتجر (مثلاً «مرهف سويداء»).
+// بتنحفظ بس للرقم يلي ما إلو اسم أو اسمو «زبون XXXX» — أي اسم حقيقي محفوظ ما بيتغيّر أبداً
+export function siteNames(tenantId, list) {
+  const out = [];
+  for (const x of list || []) {
+    const num = String(x.phone || '').replace(/\D/g, ''), nm = String(x.name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (num.length < 8 || !/[\p{L}]{2,}/u.test(nm)) continue;
+    const key = tenantId + ':' + num; realNames[key] = nm; out.push({ phone: num, name: nm });
+  }
+  if (!out.length) return 0;
+  clearTimeout(namesT); namesT = setTimeout(() => { try { fs.writeFileSync(NAMES_FILE, JSON.stringify(realNames)); } catch {} }, 1500);
+  if (hasService(tenantId, 'contacts_new')) queueContacts(tenantId, out);
+  return out.length;
+}
 // ===== دفتر عناوين الواتس (الأسماء المحفوظة عندك) =====
 // بيوصل من الواتس مع كل ربط. أي رقم إلو اسم محفوظ ما منقرّبلو أبداً، إلا إذا الاسم «زبون XXXX» يلي نحنا حطيناه
 const BOOK_FILE = path.join(DATA_DIR, 'wa-addressbook.json');
