@@ -113,7 +113,7 @@ export async function koOtp(body) {
   need((await ok(false)) || (await ok(true)), 403, 'توقيع غلط');
   seen.set(nonce, Date.now());
   need(rateLimit('koOtp:' + phone, 5, 3600_000), 429, 'كتير');
-  const sent = await sendFromPlatform(intl(phone), `كود تأكيد حسابك بمتجر KO SPORT:\n*${code}*\n\nاكتبو بالموقع لتكمّل التسجيل. صالح لـ 10 دقايق، لا تعطيه لحدا.`);
+  const sent = await sendFromPlatform(intl(phone), `كود تأكيد حسابك بمتجر KO SPORT:\n*${code}*\n\nاكتبو بالموقع لتكمّل (تسجيل حساب جديد أو دخول). صالح لـ 10 دقايق، لا تعطيه لحدا.`);
   need(sent, 503, 'الواتساب مو متصل هلق');
   return { ok: true };
 }
