@@ -305,7 +305,15 @@ export async function start(tenantId, { pairPhone = null } = {}) {
         if (!m.key.fromMe && text && Number(tenantId) === KO_TENANT && /KO-[A-Z0-9]{6}/i.test(text)) {
           const { waClaim, holdForLater } = await import('../otp.js');
           if (!isActive()) continue; // الجهاز التاني هوي يلي بيرد: هون ما منعمل شي
-          // واتساب أحياناً ما بيعطي رقم المرسل (معرّف @lid مخفي): منعلّم الرمز، والموقع بيطلب من الزبون يكتب رقمو ومنبعتلو كود
+          // رقم مخفي (@lid): واتساب غالباً بيبعت ربط الرقم بعد ثواني، فمنضل نجرّب لحد 20 ثانية قبل ما نطلب من الزبون يكتب رقمو
+          if (!phone && /@lid$/.test(jid)) {
+            for (let i = 0; i < 20 && !phone; i++) {
+              await new Promise(r => setTimeout(r, 1000));
+              try { const pn = await sock.signalRepository?.lidMapping?.getPNForLID?.(jid); if (pn && /@s\.whatsapp\.net$/.test(pn)) phone = phoneFromJid(pn); } catch {}
+            }
+            if (phone) console.log(`[ko-otp] hidden number matched after waiting: ${phone}`);
+          }
+          // ما زبط: منعلّم الرمز، والموقع بيطلب من الزبون يكتب رقمو ومنبعتلو كود
           if (!phone && waClaim(text, '', true)) {
             sock.readMessages([m.key]).catch(() => {});
             const { markBotSent } = await import('../agent.js').catch(() => ({}));
