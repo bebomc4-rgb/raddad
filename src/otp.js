@@ -72,7 +72,7 @@ async function koOpen_(body) {
   need(await verify(`open|${t}|${ts}|${nonce}`, sig), 403, 'توقيع غلط');
   seen.set(nonce, Date.now());
   need(open.size < 5000, 429, 'كتير');
-  if (!open.has(t)) open.set(t, { at: Date.now(), phone: early.get(t)?.phone || '' });
+  if (!open.has(t)) open.set(t, { at: Date.now(), phone: early.get(t)?.phone || '', hidden: !!early.get(t)?.hidden });
   early.delete(t);
   return { ok: true };
 }
@@ -85,11 +85,16 @@ async function koClaim_(body) {
   need(await verify(`claim|${t}|${ts}|${nonce}`, sig), 403, 'توقيع غلط');
   seen.set(nonce, Date.now());
   const o = open.get(t) || early.get(t);
-  return { ok: true, known: !!o, phone: o?.phone || '' };
+  return { ok: true, known: !!o, phone: o?.phone || '', hidden: !!(o && !o.phone && o.hidden) };
 }
 // من رسائل الواتساب الواصلة لرقم المتجر: إذا فيها رمز مفتوح، منسجّل رقم المرسل. بيرجع true إذا الرسالة كانت رمز تأكيد
-export function waClaim(text, phone) {
+export function waClaim(text, phone, hidden) {
   const m = String(text || '').toUpperCase().match(/KO-([A-Z0-9]{6})\b/);
+  if (m && !phone && hidden) { // رقم مخفي: منعلّم الرمز «وصل بلا رقم»
+    const o = open.get(m[1]) || (early.size < 2000 && /تأكيد حسابي|دخول لحسابي/.test(String(text)) ? (early.set(m[1], { at: Date.now(), phone: '' }), early.get(m[1])) : null);
+    if (!o) return false;
+    o.hidden = true; console.log('[ko-otp] code', m[1], 'came from a hidden number'); return true;
+  }
   if (!m || !phone) { console.log('[ko-otp] message has a code but no usable number', !!m, phone || ''); return false; }
   const o = open.get(m[1]);
   if (!o) { if (early.size < 2000 && /تأكيد حسابي|دخول لحسابي/.test(String(text))) { early.set(m[1], { at: Date.now(), phone }); return true; } return false; }

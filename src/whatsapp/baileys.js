@@ -302,10 +302,19 @@ export async function start(tenantId, { pairPhone = null } = {}) {
         }
         // «سجّل بالواتساب» بموقع KO SPORT: الزبون بعت رمز التأكيد. منأكّد رقمو ومنردّ عليه، والبوت ما بيرد على هالرسالة
         if (!m.key.fromMe && text && /KO-[A-Z0-9]{6}/i.test(text)) console.log(`[ko-otp] tenant ${tenantId}: WhatsApp message with a code from ${phone || jid} (active=${isActive()}, koTenant=${Number(tenantId) === KO_TENANT})`);
-        if (!m.key.fromMe && phone && text && Number(tenantId) === KO_TENANT && /KO-[A-Z0-9]{6}/i.test(text)) {
+        if (!m.key.fromMe && text && Number(tenantId) === KO_TENANT && /KO-[A-Z0-9]{6}/i.test(text)) {
           const { waClaim, holdForLater } = await import('../otp.js');
           if (!isActive()) continue; // الجهاز التاني هوي يلي بيرد: هون ما منعمل شي
-          if (waClaim(text, phone)) {
+          // واتساب أحياناً ما بيعطي رقم المرسل (معرّف @lid مخفي): منعلّم الرمز، والموقع بيطلب من الزبون يكتب رقمو ومنبعتلو كود
+          if (!phone && waClaim(text, '', true)) {
+            sock.readMessages([m.key]).catch(() => {});
+            const { markBotSent } = await import('../agent.js').catch(() => ({}));
+            const sent = await sock.sendMessage(jid, { text: 'وصلتنا رسالتك 🙏 ارجع لموقع KO SPORT واكتب رقم موبايلك، ومنبعتلك كود التأكيد هون عالواتساب.' }).catch(() => null);
+            if (sent?.key?.id && typeof markBotSent === 'function') markBotSent(sent.key.id);
+            console.log(`[wa] tenant ${tenantId}: KO code from a hidden number (${jid}): the site asks for the number`);
+            continue;
+          }
+          if (phone && waClaim(text, phone)) {
             sock.readMessages([m.key]).catch(() => {});
             const { markBotSent } = await import('../agent.js').catch(() => ({}));
             const sent = await sock.sendMessage(jid, { text: '✅ تأكّد رقمك. ارجع لموقع KO SPORT، حسابك جاهز وبتقدر تكمّل طلبك 🛒' }).catch(() => null);
