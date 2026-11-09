@@ -113,12 +113,11 @@ export async function koOtp(body) {
   need((await ok(false)) || (await ok(true)), 403, 'توقيع غلط');
   seen.set(nonce, Date.now());
   need(rateLimit('koOtp:' + phone, 5, 3600_000), 429, 'كتير');
-  // ✅ رسالة فيها الكود وزر «📋 نسخ الكود» (اشتغل عند صاحب المتجر، 9 تشرين التاني 2026) + الكود لحالو تحتها احتياط.
+  // ✅ رسالة وحدة فيها الكود وزر «📋 نسخ الكود» (صاحب المتجر، 9 تشرين التاني 2026)
   // إذا الزر ما انبعت: الرسالتين العاديتين
-  const btn = getSetting('ko_copy_btn', true) ? await sendCopyFromPlatform(intl(phone), `✅ كود تأكيد حسابك بمتجر KO SPORT:\n*${code}*\n\nاكبس «نسخ الكود» والصقو بالموقع. صالح لـ 10 دقايق.`, code).catch(() => false) : false;
+  const btn = getSetting('ko_copy_btn', true) ? await sendCopyFromPlatform(intl(phone), `✅ كود تأكيد حسابك\nبمتجر KO SPORT\n\n*${code}*\n\nاكبس «نسخ الكود» والصقو بالموقع. صالح لـ 10 دقايق.`, code).catch(() => false) : false;
   let sent = btn;
-  if (btn) await sendFromPlatform(intl(phone), code);
-  else { sent = await sendFromPlatform(intl(phone), `✅ كود تأكيد حسابك بمتجر KO SPORT 👇\nاكبس مطوّل عالكود تحت واختار «نسخ»، والصقو بالموقع. صالح لـ 10 دقايق.`); if (sent) await sendFromPlatform(intl(phone), code); }
+  if (!btn) { sent = await sendFromPlatform(intl(phone), `✅ كود تأكيد حسابك بمتجر KO SPORT 👇\nاكبس مطوّل عالكود تحت واختار «نسخ»، والصقو بالموقع. صالح لـ 10 دقايق.`); if (sent) await sendFromPlatform(intl(phone), code); }
   console.log('[ko-otp] code to', intl(phone), btn ? 'with copy button' : sent ? 'as text' : 'NOT sent');
   need(sent, 503, 'الواتساب مو متصل هلق');
   return { ok: true };
