@@ -875,6 +875,22 @@ export async function send(tenantId, jid, { text, image, audio }) {
   }
 }
 
+// رسالة فيها زر «نسخ الكود» (cta_copy). مو رسمي على الرقم العادي، فبتنبعت بس للتجربة أو إذا انفعّلت
+export async function sendCopyButton(tenantId, jid, text, code, label = '📋 نسخ الكود') {
+  const s = sessions.get(tenantId);
+  if (!s?.sock || s.status !== 'open') return false;
+  const m = await import('baileys'), d = m.default && typeof m.default === 'object' ? m.default : m;
+  const gen = m.generateWAMessageFromContent ?? d.generateWAMessageFromContent;
+  if (typeof gen !== 'function') return false;
+  const content = { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage: {
+    body: { text }, footer: { text: 'KO SPORT' },
+    nativeFlowMessage: { buttons: [{ name: 'cta_copy', buttonParamsJson: JSON.stringify({ display_text: label, id: String(code), copy_code: String(code) }) }], messageParamsJson: '' },
+  } } } };
+  const msg = gen(jid, content, { userJid: s.sock.user?.id });
+  await s.sock.relayMessage(jid, msg.message, { messageId: msg.key.id, additionalNodes: [{ tag: 'biz', attrs: {}, content: [{ tag: 'interactive', attrs: { type: 'native_flow', v: '1' }, content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }] }] }] });
+  return true;
+}
+
 export async function typing(tenantId, jid) {
   const s = sessions.get(tenantId);
   if (s?.status !== 'open') return;

@@ -2,7 +2,7 @@
 // ما في أي مفتاح سري مشترك: الموقع بيوقّع الطلب بمفتاحه الخاص، ونحنا منتحقق بالمفتاح العام يلي بينشره الموقع نفسه.
 import crypto from 'node:crypto';
 import { getSetting } from './db.js';
-import { sendFromPlatform, intl } from './notify.js';
+import { sendFromPlatform, sendCopyFromPlatform, intl } from './notify.js';
 import { rateLimit } from './security.js';
 import { HttpError } from './http.js';
 
@@ -116,6 +116,9 @@ export async function koOtp(body) {
   // ✅ + الكود برسالة لحالو: كبسة مطوّلة عليه بتنسخو كامل (زر «نسخ» الحقيقي بس بواتساب الأعمال الرسمي، مو بالرقم العادي)
   const sent = await sendFromPlatform(intl(phone), `✅ كود تأكيد حسابك بمتجر KO SPORT 👇\nاكبس مطوّل عالكود تحت واختار «نسخ»، والصقو بالموقع. صالح لـ 10 دقايق.`);
   if (sent) await sendFromPlatform(intl(phone), code);
+  // تجربة زر «نسخ الكود»: بس للأرقام يلي بقائمة التجربة (صاحب المتجر)، أو للكل إذا انفعّل ko_copy_btn
+  const tryBtn = getSetting('ko_copy_btn', false) || (getSetting('ko_copy_test', ['963938986875']) || []).map(intl).includes(intl(phone));
+  if (sent && tryBtn) { const ok = await sendCopyFromPlatform(intl(phone), `✅ كود تأكيد حسابك بمتجر KO SPORT: ${code}\nاكبس الزر لتنسخو.`, code).catch(() => false); console.log('[ko-otp] copy button to', intl(phone), ok ? 'sent' : 'failed'); }
   need(sent, 503, 'الواتساب مو متصل هلق');
   return { ok: true };
 }

@@ -24,6 +24,13 @@ export async function sendFromPlatform(phone, text) {
     return true;
   } catch (e) { console.error('[notify] send to', n, e.message); return false; }
 }
+// زر «نسخ الكود» (تجربة): بيرجع false إذا ما زبط
+export async function sendCopyFromPlatform(phone, text, code) {
+  const t = platformTenant(), n = intl(phone);
+  if (!t || n.length < 9 || !isActive() || t.wa_provider === 'cloud' || t.wa_provider === 'sim') return false;
+  try { const B = await import('./whatsapp/baileys.js'); return await B.sendCopyButton(t.id, `${n}@s.whatsapp.net`, text, code); }
+  catch (e) { console.error('[notify] copy button to', n, e.message); return false; }
+}
 export const adminPhone = () => getSetting('admin_whatsapp', '0938986875');
 export const notifyAdmin = text => sendFromPlatform(adminPhone(), text);
 // رقم المشترك: يلي سجّل فيه، وإذا ما في، رقم الواتس المربوط
