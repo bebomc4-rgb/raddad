@@ -81,7 +81,7 @@ export async function checkout({ kind, id, months, onDone }) {
 const RESP_FEATS = ['بيحكي بأسلوبك وبيفهم اللهجة', 'ردود بلا حدود', 'بيفهم الرسائل الصوتية وبيرد عليها', 'بيشوف الصور وبيرد بطريقة تسويقية', 'بياخد الاسم والرقم والعنوان ويبعتلك الطلب', 'بيسكت لحالو لما ترد إنت من موبايلك'];
 export async function billing(view) {
   view.title('الاشتراكات والدفع', 'كل خدمة لحالها، وبتدفع بس على يلي بدك ياه');
-  let tab = ['responder', 'contacts_new', 'contacts_old'].includes(view.query.tab) ? view.query.tab : 'responder', months = 1;
+  let tab = ['responder', 'contacts_new', 'contacts_old', 'wa_products'].includes(view.query.tab) ? view.query.tab : 'responder', months = 1;
   const paint = async () => {
     const b = await billingData(); if (!view.alive) return;
     const r = b.responder, sv = b.mine;
@@ -90,7 +90,8 @@ export async function billing(view) {
     const mineRows = [
       { t: 'المجيب الذكي', ic: 'bot', cls: 'blue', s: r.paid ? `${r.plan_name} — لـ ${date(r.expires_at)} (${left(r.expires_at)})` : r.expired ? 'خلص الاشتراك' : r.gate?.code === 'trial' ? 'تجربة مجانية' : 'غير مشترك', ok: r.paid, tab: 'responder' },
       { t: svc('contacts_new').name, ic: 'book', cls: 'violet', s: sv.contacts_new.owned ? (sv.contacts_new.forever ? 'شغّال دايماً' : `لـ ${date(sv.contacts_new.expires_at)} (${left(sv.contacts_new.expires_at)})`) : sv.contacts_new.expired ? 'خلص الاشتراك' : 'غير مشترك', ok: sv.contacts_new.owned, tab: 'contacts_new' },
-      { t: svc('contacts_old').name, ic: 'history', cls: 'gold', s: sv.contacts_old.owned ? 'مدفوعة ✓ (للأبد)' : 'غير مشترك', ok: sv.contacts_old.owned, tab: 'contacts_old', once: true }
+      { t: svc('contacts_old').name, ic: 'history', cls: 'gold', s: sv.contacts_old.owned ? 'مدفوعة ✓ (للأبد)' : 'غير مشترك', ok: sv.contacts_old.owned, tab: 'contacts_old', once: true },
+      ...(sv.wa_products ? [{ t: svc('wa_products').name || 'منتجات موقعك من الواتساب', ic: 'sparkle', cls: 'blue', s: sv.wa_products.owned ? (sv.wa_products.forever ? 'شغّال دايماً' : `لـ ${date(sv.wa_products.expires_at)} (${left(sv.wa_products.expires_at)})`) : sv.wa_products.expired ? 'خلص الاشتراك' : 'غير مشترك', ok: sv.wa_products.owned, tab: 'wa_products' }] : [])
     ];
     let body;
     if (tab === 'responder') {
@@ -119,7 +120,7 @@ export async function billing(view) {
           ${x.once && x.ok ? '' : html`<button class="btn btn-sm ${x.ok ? '' : 'btn-primary'}" data-tab-go="${x.tab}">${x.ok ? 'جدّد' : 'اشترك'}</button>`}</div>`)}</div></div>
       <div class="card pad-lg" data-shop>
         <div class="card-h"><h3>${ic('sparkle')} اشترك أو جدّد</h3></div>
-        <div class="seg" style="margin-bottom:18px" data-tabs><button data-t="responder" class="${tab === 'responder' ? 'on' : ''}">المجيب الذكي</button><button data-t="contacts_new" class="${tab === 'contacts_new' ? 'on' : ''}">حفظ كل رقم جديد</button><button data-t="contacts_old" class="${tab === 'contacts_old' ? 'on' : ''}">الأرقام القديمة</button></div>
+        <div class="seg" style="margin-bottom:18px" data-tabs><button data-t="responder" class="${tab === 'responder' ? 'on' : ''}">المجيب الذكي</button><button data-t="contacts_new" class="${tab === 'contacts_new' ? 'on' : ''}">حفظ كل رقم جديد</button><button data-t="contacts_old" class="${tab === 'contacts_old' ? 'on' : ''}">الأرقام القديمة</button><button data-t="wa_products" class="${tab === 'wa_products' ? 'on' : ''}">منتجات من الواتساب</button></div>
         ${body}
       </div>
       <div class="card pad-lg"><div class="card-h"><h3>${ic('history')} طلباتي</h3></div>

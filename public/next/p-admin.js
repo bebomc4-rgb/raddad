@@ -3,7 +3,7 @@ import { state, api, html, ic, n, money, periodName, date, dateTime, ago, left, 
 import { paintNav } from './app.js';
 
 const PST = { pending: ['ناطر', 'warn'], awaiting_delivery: ['ناطر التسليم', 'warn'], approved: ['تفعّل', 'ok'], rejected: ['مرفوض', 'bad'] };
-const SVC = { contacts_new: 'أرقام جديدة', contacts_old: 'أرقام قديمة' };
+const SVC = { contacts_new: 'أرقام جديدة', contacts_old: 'أرقام قديمة', wa_products: 'منتجات واتساب' };
 
 export async function overview(view) {
   view.title('لوحة الإدارة', 'كلشي عن منصتك بلمحة');
@@ -102,9 +102,9 @@ function manage(t, plans, done) {
     body: html`<div class="stack">
       <div class="kv"><dt>الرقم/الإيميل</dt><dd class="ltr">${t.email || '—'}</dd><dt>واتساب</dt><dd>${t.wa_phone ? phoneFmt(t.wa_phone) : 'مو مربوط'}</dd><dt>سجّل</dt><dd>${date(t.created_at)}</dd><dt>ردود ذكية (7 أيام)</dt><dd>${n(t.ai_7d)}</dd></div>
       <div class="divider"></div>
-      ${['contacts_new', 'contacts_old'].map(sid => { const s = t.services[sid]; return html`<div class="row between"><span><b>${sid === 'contacts_new' ? 'حفظ كل رقم جديد' : 'حفظ الأرقام القديمة'}</b><br><span class="small muted">${s.owned ? (s.forever ? 'شغّالة دايماً' : `لـ ${date(s.expires_at)}`) + (s.paused ? ' · موقوفة' : '') : 'غير مشترك'}</span></span>
-        <span class="row">${sid === 'contacts_new' ? html`<select class="select" style="width:auto;min-height:38px" data-months="${sid}">${[['d1', 'تجربة يوم'], ['d3', 'تجربة 3 أيام'], ['d7', 'تجربة أسبوع'], ...[1, 3, 6, 12].map(m => [String(m), periodName(m)])].map(([v, l]) => html`<option value="${v}" ${v === '1' ? 'selected' : ''}>${l}</option>`)}</select>` : ''}
-          <button class="btn btn-sm btn-primary" data-svc="grant" data-sid="${sid}">${s.owned && sid === 'contacts_new' ? 'مدّد' : 'فعّل'}</button>
+      ${['contacts_new', 'contacts_old', 'wa_products'].filter(sid => t.services[sid]).map(sid => { const s = t.services[sid]; return html`<div class="row between"><span><b>${{ contacts_new: 'حفظ كل رقم جديد', contacts_old: 'حفظ الأرقام القديمة', wa_products: 'منتجات موقعك من الواتساب' }[sid]}</b><br><span class="small muted">${s.owned ? (s.forever ? 'شغّالة دايماً' : `لـ ${date(s.expires_at)}`) + (s.paused ? ' · موقوفة' : '') : 'غير مشترك'}</span></span>
+        <span class="row">${sid !== 'contacts_old' ? html`<select class="select" style="width:auto;min-height:38px" data-months="${sid}">${[['d1', 'تجربة يوم'], ['d3', 'تجربة 3 أيام'], ['d7', 'تجربة أسبوع'], ...[1, 3, 6, 12].map(m => [String(m), periodName(m)])].map(([v, l]) => html`<option value="${v}" ${v === '1' ? 'selected' : ''}>${l}</option>`)}</select>` : ''}
+          <button class="btn btn-sm btn-primary" data-svc="grant" data-sid="${sid}">${s.owned && sid !== 'contacts_old' ? 'مدّد' : 'فعّل'}</button>
           ${s.owned ? html`<button class="btn btn-sm btn-danger" data-svc="revoke" data-sid="${sid}">إلغاء</button>` : ''}</span></div>`; })}
       <div class="divider"></div>
       <div class="row between"><span><b>المجيب الذكي</b><br><span class="small muted">${t.plan_id !== 'free' ? `${t.plan_id} لـ ${date(t.plan_expires_at)}` : 'مقفول'}</span></span>

@@ -2,7 +2,7 @@
 // كل زبون بيشترك بالشي يلي بدو ياه بس. متجر صاحب المنصة عندو كلشي دايماً.
 import { q, tx } from './db.js';
 
-export const SERVICE_IDS = ['contacts_new', 'contacts_old'];
+export const SERVICE_IDS = ['contacts_new', 'contacts_old', 'wa_products'];
 export const SERVICE_PERIODS = [1, 3, 6, 12];
 const now = () => Math.floor(Date.now() / 1000);
 const daysFor = m => (m === 12 ? 365 : m * 30);
