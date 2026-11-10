@@ -1,5 +1,5 @@
 // HERO STORE — مزامنة قائمة المورّد (mega-game.net) مع موقع هيرو ستور
-// مفصول عن ردّاد: بس ساكن على نفس السيرفر. بيشتغل مرتين باليوم: 10 الصبح و6 المسا بتوقيت دمشق (hero-sync.timer).
+// مفصول عن ردّاد: بس ساكن على نفس السيرفر. بيشتغل كل ساعة (hero-sync.timer).
 // بيقرا الصفحات العامة بس (بدون تسجيل دخول)، وبيبعت لقطة موقّعة بمفتاح خاص محفوظ على السيرفر فقط.
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { webcrypto as crypto } from "node:crypto";

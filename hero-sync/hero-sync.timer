@@ -1,11 +1,10 @@
 [Unit]
-Description=HERO STORE supplier sync twice a day (10:00 and 18:00 Damascus time)
+Description=HERO STORE supplier sync every hour
 
 [Timer]
-OnCalendar=*-*-* 10:00:00 Asia/Damascus
-OnCalendar=*-*-* 18:00:00 Asia/Damascus
+OnCalendar=hourly
+RandomizedDelaySec=120
 Persistent=true
-AccuracySec=1min
 
 [Install]
 WantedBy=timers.target
