@@ -18,7 +18,7 @@ main() {
   if [ -f hero-sync/hero-sync.timer ]; then
     if ! cmp -s hero-sync/hero-sync.service /etc/systemd/system/hero-sync.service || ! cmp -s hero-sync/hero-sync.timer /etc/systemd/system/hero-sync.timer; then
       cp hero-sync/hero-sync.service hero-sync/hero-sync.timer /etc/systemd/system/
-      systemctl daemon-reload; systemctl enable --now hero-sync.timer
+      systemctl daemon-reload; systemctl enable hero-sync.timer; systemctl restart hero-sync.timer
     fi
     echo "$CHANGED" | grep -q '^hero-sync/' && systemctl start --no-block hero-sync.service
   fi
