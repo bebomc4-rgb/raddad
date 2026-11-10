@@ -14,9 +14,17 @@ main() {
   git reset -q --hard origin/main
   [ "$OLD" != "$(git rev-parse HEAD:package.json)" ] && npm install --omit=dev --no-audit --no-fund
   chown -R raddad:raddad /opt/raddad
+  # هيرو ستور: مزامنة المورّد (مفصولة عن المجيب، بس على نفس السيرفر)
+  if [ -f hero-sync/hero-sync.timer ]; then
+    if ! cmp -s hero-sync/hero-sync.service /etc/systemd/system/hero-sync.service || ! cmp -s hero-sync/hero-sync.timer /etc/systemd/system/hero-sync.timer; then
+      cp hero-sync/hero-sync.service hero-sync/hero-sync.timer /etc/systemd/system/
+      systemctl daemon-reload; systemctl enable --now hero-sync.timer
+    fi
+    echo "$CHANGED" | grep -q '^hero-sync/' && systemctl start --no-block hero-sync.service
+  fi
   echo "[$(date -Is)] updated to $(git log -1 --format='%h %s')" >> /opt/raddad/data/update.log
   # تعديلات ما بتأثر عالمجيب (طلب سجل، GitHub، ملاحظات): ما منعيد التشغيل
-  if [ -n "$CHANGED" ] && ! echo "$CHANGED" | grep -qvE '^(deploy/diag-request|\.github/|README|.*\.md$)'; then return 0; fi
+  if [ -n "$CHANGED" ] && ! echo "$CHANGED" | grep -qvE '^(deploy/diag-request|\.github/|hero-sync/|README|.*\.md$)'; then return 0; fi
   systemctl restart raddad
 }
 main "$@"; exit 0
