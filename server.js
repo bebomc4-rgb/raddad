@@ -220,7 +220,15 @@ const server = http.createServer(async (req, res) => {
         transform: html => html.replace(/href="\/next\/([\w./-]+\.css)"/g, (m, f) => `href="/next/${f}?v=${fileVersion(path.join(NEXT, f))}"`)
       });
     }
-    // الصفحة الرئيسية: منحط رقم نسخة على app.js و app.css
+    // الرابط الأساسي بيفتح الواجهة الجديدة (صاحب المنصة، 11 تشرين التاني 2026).
+    // الواجهة القديمة صارت على /old/ (فيها أدوات صاحب المنصة: الاستوديو، التعديل التلقائي، العقول…)،
+    // والروابط القديمة لهالأدوات (/#/studio …) بتروح لحالها على /old/
+    if (pathname === '/' || pathname === '/index.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      return res.end(`<!doctype html><meta charset="utf-8"><title>K FAST AI</title><script>var h=location.hash||"";location.replace((/^#\/(studio|auto|batch|ai|messenger|link|playground|more|quick|agent|connect|s)(\/|$)/.test(h)?"/old/":"/next/")+location.search+h)</script><noscript><a href="/next/">K FAST AI</a></noscript>`);
+    }
+    if (pathname === '/old') { res.writeHead(301, { Location: '/old/' + (url.search || '') }); return res.end(); }
+    // الواجهة القديمة: منحط رقم نسخة على app.js و app.css
     return serveFile(res, path.join(PUBLIC, 'index.html'), {
       transform: html => html
         .replace('href="/app.css"', `href="/app.css?v=${fileVersion(path.join(PUBLIC, 'app.css'))}"`)
