@@ -17,7 +17,7 @@ setInterval(() => { const n = Date.now(); for (const [k, v] of jobs) if (n - v.a
 
 const digits = s => String(s || '').replace(/\D/g, '');
 const same = (a, b) => { a = digits(a).replace(/^0+/, ''); b = digits(b).replace(/^0+/, ''); return a && b && (a === b || a.endsWith(b.slice(-9)) || b.endsWith(a.slice(-9))); };
-const CMD = /^\s*(احذف|حذف|امسح|شيل|الغي|غير|غيّر|عدل|عدّل|سعر|نزّل|نزل|ارفع|خلص|خلّص|نفذ|نفد|مو متوفر|رجع|رجّع|متوفر|ضيف|اضف|أضف|منتج جديد|منتج|حط|حطّ|حطو|حطّو|انقل|نقل)\b/;
+const CMD = /^\s*(احذف|حذف|امسح|شيل|الغي|غير|غيّر|عدل|عدّل|سعر|نزّل|نزل|ارفع|خلص|خلّص|نفذ|نفد|مو متوفر|رجع|رجّع|متوفر|ضيف|اضف|أضف|منتج جديد|منتج|حط|حطّ|حطو|حطّو|انقل|نقل)(?=[\s،,.:!؟?]|$)/u;
 
 export function siteFor(tenant) {
   if (isKoTenant(tenant)) return { site: 'ko', url: (getSetting('ko_products_origin', '') || 'https://ko-sport.online').replace(/\/$/, ''), name: 'KO SPORT' };
