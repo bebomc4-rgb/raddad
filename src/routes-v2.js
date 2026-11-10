@@ -521,5 +521,7 @@ r.post('/api/otp/ko-open', async ctx => (await import('./otp.js')).koOpen(ctx.bo
 r.post('/api/otp/ko-notify', async ctx => (await import('./otp.js')).koNotify(ctx.body));
 r.post('/api/otp/ko-contacts', async ctx => (await import('./otp.js')).koContacts(ctx.body));
 r.post('/api/otp/ko-claim', async ctx => (await import('./otp.js')).koClaim(ctx.body));
+// الموقع بيسحب «مهمة» المنتجات يلي حضّرها البوت من رسالة صاحب المتجر (مرة وحدة، بتخلص بعد 3 دقايق)
+r.post('/api/products-job', async ctx => { const j = (await import('./wa-products.js')).takeJob(ctx.body?.t); if (!j) throw new (await import('./http.js')).HttpError(404, 'ما في'); return j; });
 
 export { isSuperTenant };

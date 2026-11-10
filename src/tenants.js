@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS = {
   ignore_numbers: '',
   notify_number: '',          // رقم صاحب المتجر لإشعارات الطلبات
   owner_numbers: '',          // أرقام صاحب المتجر: بيبعت منها صور وبيطلب تعديلها
+  products_site: '',          // رابط موقع المتجر لخدمة «منتجات موقعك من الواتساب» (https://…)
   notify_orders: true,
   bot_schedule: 'always',     // always | off_hours (بس لما الموظفين مو موجودين) | work_hours
   work_from: '09:00',

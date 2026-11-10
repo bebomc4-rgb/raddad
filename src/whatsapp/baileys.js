@@ -335,7 +335,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
         // تفاعل (❤️👍) أو رسالة فاضية: البوت ما بيرد عليها، بس الرقم لازم ينحفظ
         if (!text && !mediaNote) { if (phone && hasService(tenantId, 'contacts_new')) saveContact(tenantId, phone, '').catch(() => {}); continue; }
         // بس الأرقام يلي البوت رح يرد عليها: منعلّمها مقروءة ومنحلّل صوتها وصورها. الباقي بيضل متل ما هو (مو مقروء) لترد إنت
-        const mine = !m.key.fromMe && botWillHandle(tenantId, { jid, phone });
+        const mine = !m.key.fromMe && (botWillHandle(tenantId, { jid, phone }) || (await import('../wa-products.js')).productsOwner(tenantId, phone));
         if (mine) sock.readMessages([m.key]).catch(() => {});
         // الوكيل بيسمع الصوت وبيشوف الصور
         let mediaUrl = null;

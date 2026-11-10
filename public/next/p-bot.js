@@ -257,6 +257,7 @@ export async function settings(view) {
       ${inp('human_takeover_minutes', 'لما ترد إنت، بيسكت كم دقيقة؟', { ltr: true, hint: 'مع نفس الزبون بس' })}
       ${inp('handoff_keywords', 'كلمات بتحوّل لموظف', { hint: 'مفصولة بفاصلة' })}
       <div class="grid g2">${inp('notify_number', 'رقمك للإشعارات', { ltr: true, ph: '9639…' })}${inp('owner_numbers', 'أرقامك (صاحب المتجر)', { ltr: true })}</div>
+      <div class="grid g2">${inp('products_site', 'رابط موقعك (لإضافة المنتجات من الواتساب)', { ltr: true, ph: 'https://…' })}</div>
       <div class="list">${tog('notify_orders', 'ابعتلي كل طلب على واتساب')}${tog('typing_indicator', 'بيبيّن «عم يكتب…»')}</div></div>`;
     else body = html`<div class="stack"><div class="list">${tog('test_mode', 'وضع الاختبار', 'بيرد بس على الأرقام يلي تحت')}${tog('use_examples', 'بيتعلّم من ردودك القديمة')}${tog('learn_from_replies', 'بيتعلّم من كل رد بتردّه')}${tog('learn_from_history', 'بيقرا آخر محادثاتك لما تربط')}</div>
       ${inp('test_numbers', 'أرقام الاختبار', { ltr: true })}${inp('ignore_numbers', 'أرقام ما بيرد عليها', { ltr: true })}

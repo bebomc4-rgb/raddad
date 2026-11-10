@@ -351,6 +351,13 @@ const migrations = [
   `
   ALTER TABLE auto_items ADD COLUMN result2_url TEXT;
   ALTER TABLE auto_items ADD COLUMN out2_path TEXT;
+  `,
+  // 22: خدمة «إدارة منتجات موقعك من الواتساب» (صاحب المنصة، 10 تشرين التاني 2026)
+  `
+  INSERT OR IGNORE INTO services (id, name, kind, description, features, sort) VALUES
+    ('wa_products', 'منتجات موقعك من الواتساب', 'period', 'بتبعت لرقم البوت صورة المنتج مع اسمو وسعرو، وبينزل عموقعك لحالو. وبتقلّو «غيّر سعر…» أو «خلص…» أو «احذف…» وبينفّذ.',
+     '["صورة + اسم + سعر = منتج جديد بموقعك","تعديل السعر والتوفّر والحذف بالكلام","البوت بيكتب وصف المنتج","بيشتغل من رقمك أنت بس"]', 5);
+  INSERT OR IGNORE INTO service_prices (service_id, months, price) VALUES ('wa_products', 1, 10), ('wa_products', 3, 25), ('wa_products', 6, 45), ('wa_products', 12, 80);
   `
 ];
 

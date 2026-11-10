@@ -17,6 +17,7 @@ import { isActive } from './failover.js';
 import { koMenu, koMenuHint } from './ko-menu.js';
 import { similarExamples, learnFromLive } from './style.js';
 import { editImage, EDIT_WORDS } from './imageedit.js';
+import { productsWants, productsHandle } from './wa-products.js';
 
 // منتعلّم من رد صاحب المتجر بعد ما يخلص كتابة (دقيقة ونص بعد آخر رسالة إله)
 const learnTimers = new Map();
@@ -87,6 +88,11 @@ export function handleInbound(tenantId, { jid, phone, name, text, waId, fromMe =
   // تعديل الصور عالواتس ملغى نهائياً (صاحب المتجر طلب). الصور بتنعامل متل أي رسالة عادية
   if (false && isOwner(tenant, contact) && ownerImageCommand(tenant, contact, text, mediaUrl)) return;
   if (!isActive()) return; // الموبايل الاحتياط: بيسجّل الرسالة بس، الكمبيوتر هوي يلي بيرد
+  // صاحب المتجر بيدير منتجات موقعو من الواتساب (صورة + اسم + سعر، احذف، غيّر سعر…)
+  if (productsWants(tenant, contact, { text, mediaUrl })) {
+    productsHandle(tenant, contact, { text, mediaUrl, mediaNote }, t => t && send(tenant, contact, { text: t, via: 'منتجات الموقع' }).catch(e => console.error('[wa-products] send', e.message)));
+    return;
+  }
   scheduleReply(tenant, contact.id);
 }
 
