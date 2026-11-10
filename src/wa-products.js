@@ -17,7 +17,7 @@ setInterval(() => { const n = Date.now(); for (const [k, v] of jobs) if (n - v.a
 
 const digits = s => String(s || '').replace(/\D/g, '');
 const same = (a, b) => { a = digits(a).replace(/^0+/, ''); b = digits(b).replace(/^0+/, ''); return a && b && (a === b || a.endsWith(b.slice(-9)) || b.endsWith(a.slice(-9))); };
-const CMD = /^\s*(احذف|حذف|امسح|شيل|الغي|غير|غيّر|عدل|عدّل|سعر|نزّل|نزل|ارفع|خلص|خلّص|نفذ|نفد|مو متوفر|رجع|رجّع|متوفر|ضيف|اضف|أضف|منتج جديد|منتج)\b/;
+const CMD = /^\s*(احذف|حذف|امسح|شيل|الغي|غير|غيّر|عدل|عدّل|سعر|نزّل|نزل|ارفع|خلص|خلّص|نفذ|نفد|مو متوفر|رجع|رجّع|متوفر|ضيف|اضف|أضف|منتج جديد|منتج|حط|حطّ|حطو|حطّو|انقل|نقل)\b/;
 
 export function siteFor(tenant) {
   if (isKoTenant(tenant)) return { site: 'ko', url: (getSetting('ko_products_origin', '') || 'https://ko-sport.online').replace(/\/$/, ''), name: 'KO SPORT' };
@@ -52,9 +52,10 @@ const SYS = `إنت مساعد بيدير منتجات متجر من رسائل 
 - none: الرسالة مو أمر منتجات.
 إذا add وما في سعر، حط price=null و ask="قديش سعرو؟". لا تخترع سعر ولا اسم.`;
 
-async function parse(tenant, text, imageNote) {
+async function parse(tenant, text, imageNote, cats) {
   const content = [text ? 'رسالة صاحب المتجر: ' + text : 'صاحب المتجر بعت صورة بدون كلام', imageNote ? 'وصف الصورة: ' + imageNote : ''].filter(Boolean).join('\n');
-  const r = await chat(resolveAI(tenant, { prefer: 'smart' }), { system: SYS, messages: [{ role: 'user', content }], json: true, temperature: 0.2, maxTokens: 600 });
+  const sys = SYS + (cats.length ? `\nأقسام الموقع (category لازم تكون وحدة منها حرفياً، اختار الأنسب لنوع المنتج متل «حبل قفز» لحبل القفز و«قفازات ملاكمة» لقفاز الملاكمة. إذا ما في قسم مناسب أكيد حط category=""):\n${cats.join('\n')}` : '');
+  const r = await chat(resolveAI(tenant, { prefer: 'smart' }), { system: sys, messages: [{ role: 'user', content }], json: true, temperature: 0.2, maxTokens: 700 });
   return parseJSON(r.text || r.reply || r.content || '') || { action: 'none' };
 }
 
@@ -70,6 +71,14 @@ async function run(tenant, site, job) {
   } catch (e) { return { ok: false, msg: 'ما قدرت وصل للموقع: ' + e.message }; }
   finally { jobs.delete(t); }
 }
+const catCache = new Map(); // tenant → { cats, at }
+async function getCats(tenant, site) {
+  const c = catCache.get(tenant.id); if (c && Date.now() - c.at < 10 * 60_000) return c.cats;
+  const r = await run(tenant, site, { action: 'cats' });
+  const cats = Array.isArray(r.cats) ? r.cats.slice(0, 80) : [];
+  if (cats.length) catCache.set(tenant.id, { cats, at: Date.now() });
+  return cats;
+}
 // الموقع بيسحب المهمة من هون (مرة وحدة)
 export function takeJob(t) {
   const v = jobs.get(String(t || '')); if (!v) return null;
@@ -81,8 +90,9 @@ function result(r, job) {
   if (r.candidates?.length) return null;
   if (!r.ok) return '✗ ' + (r.msg || 'ما زبط');
   const p = r.product || {};
-  if (job.action === 'add') return `✅ انضاف «${p.name}»${p.price ? ' بسعر ' + money(p.price) : ''}${r.images ? ` (${r.images} صورة)` : ''}\n${p.url || ''}`;
+  if (job.action === 'add') return `✅ ضفت المنتج عالموقع:\n• الاسم: ${p.name}\n• القسم: ${p.category || '—'}\n• السعر: ${p.price ? money(p.price) : 'بالتواصل'}\n• الصورة الرئيسية: ${r.images ? 'الصورة يلي بعتها' + (r.images > 1 ? ` (+${r.images - 1})` : '') : 'ما في صورة'}${p.details ? '\n• الوصف: ' + p.details : ''}\n${p.url || ''}\n\nبدك تغيّر شي؟ قلّي مثلاً «غيّر سعرو لـ 30» أو «حطّو بقسم …» أو ابعت صور زيادة.`;
   if (job.action === 'addimg') return `✅ انضافت الصورة لـ «${p.name}»`;
+  if (job.category) return `✅ نقلت «${p.name}» لقسم «${p.category}»\n${p.url || ''}`;
   if (job.action === 'delete') return `🗑️ انحذف «${p.name}»`;
   return `✅ تعدّل «${p.name}»${job.price != null ? '\nالسعر: ' + money(p.price) : ''}${job.inStock != null ? '\n' + (p.inStock ? 'صار متوفر' : 'صار «خالص»') : ''}\n${p.url || ''}`;
 }
@@ -108,18 +118,34 @@ export async function productsHandle(tenant, contact, { text, mediaUrl, mediaNot
       if (r.ok && r.product) lastAdd.set(key, { id: r.product.id, at: Date.now() });
       return reply(result(r, job) || '✗ ما زبط');
     }
+    if (pd && pd.kind === 'cat' && /^\d{1,2}$/.test(t)) {
+      const c = pd.cats[Number(t) - 1]; if (!c) return reply('الرقم مو بالقائمة، ابعت رقم القسم أو «الغي».');
+      pending.delete(key);
+      const job = { ...pd.job, category: c };
+      if (job.price == null || job.price === '') { pending.set(key, { kind: 'price', job, at: Date.now() }); return reply(`حطّيتو بقسم «${c}». قديش سعر «${job.name}» بالدولار؟`); }
+      const r = await run(tenant, site, job);
+      if (r.ok && r.product) lastAdd.set(key, { id: r.product.id, at: Date.now() });
+      return reply(result(r, job) || '✗ ما زبط');
+    }
     // صورة زيادة بدون كلام بعد منتج جديد
     if (img && !t && lastAdd.has(key)) {
       const job = { action: 'addimg', id: lastAdd.get(key).id, images: [img] }, r = await run(tenant, site, job);
       lastAdd.set(key, { ...lastAdd.get(key), at: Date.now() });
       return reply(result(r, job) || '✗ ما زبط');
     }
-    const a = await parse(tenant, t, mediaNote ? String(mediaNote).replace(/^📷[^:]*:\s*/, '') : '');
+    const cats = await getCats(tenant, site).catch(() => []);
+    const a = await parse(tenant, t, mediaNote ? String(mediaNote).replace(/^📷[^:]*:\s*/, '') : '', cats);
     if (!a || a.action === 'none') return reply('ما فهمت شو بدك تعمل بالمنتج. أمثلة:\n• صورة + «قفاز ملاكمة أحمر 25$»\n• «غيّر سعر حزام أحمر لـ 9»\n• «خلص الشيكر الأسود»\n• «احذف حبل القفز»');
-    const job = { action: a.action === 'add' ? 'add' : a.action === 'delete' ? 'delete' : 'update', name: a.name, query: a.query || a.name, price: a.price, newName: a.newName, category: a.category, inStock: a.inStock, details: a.action === 'add' ? a.details : '' };
+    const job = { action: a.action === 'add' ? 'add' : a.action === 'delete' ? 'delete' : 'update', name: a.name, query: a.query || a.name, price: a.price, newName: a.newName, category: a.category && (!cats.length || cats.includes(a.category)) ? a.category : '', inStock: a.inStock, details: a.action === 'add' ? a.details : '' };
+    // «غيّر سعرو / حطّو بقسم…» بعد منتج جديد: بيقصد آخر منتج
+    if (job.action === 'update' && !job.query && lastAdd.has(key)) job.id = lastAdd.get(key).id;
     if (job.action === 'add') {
       job.images = img ? [img] : [];
       if (!job.name) return reply('شو اسم المنتج؟ ابعت الصورة مع الاسم والسعر.');
+      if (cats.length && !cats.includes(job.category)) {
+        pending.set(key, { kind: 'cat', job, cats, at: Date.now() });
+        return reply(`ما عرفت بأي قسم حطّ «${job.name}». ابعتلي رقم القسم:\n` + cats.map((c, i) => `${i + 1}. ${c}`).join('\n') + '\n(أو «الغي»)');
+      }
       if (job.price == null || job.price === '') { pending.set(key, { kind: 'price', job, at: Date.now() }); return reply(`«${job.name}» — قديش سعرو بالدولار؟`); }
     }
     const r = await run(tenant, site, job);
