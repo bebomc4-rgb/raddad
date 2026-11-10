@@ -225,7 +225,7 @@ const server = http.createServer(async (req, res) => {
     // والروابط القديمة لهالأدوات (/#/studio …) بتروح لحالها على /old/
     if (pathname === '/' || pathname === '/index.html') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-      return res.end(`<!doctype html><meta charset="utf-8"><title>K FAST AI</title><script>var h=location.hash||"";location.replace((/^#\/(studio|auto|batch|ai|messenger|link|playground|more|quick|agent|connect|s)(\/|$)/.test(h)?"/old/":"/next/")+location.search+h)</script><noscript><a href="/next/">K FAST AI</a></noscript>`);
+      return res.end(`<!doctype html><meta charset="utf-8"><title>K FAST AI</title><script>var h=location.hash||"",t=["studio","auto","batch","ai","messenger","link","playground","more","quick","agent","connect","s"],k=h.replace("#/","").split("/")[0];location.replace((h.indexOf("#/")===0&&t.indexOf(k)>=0?"/old/":"/next/")+location.search+h)</script><noscript><a href="/next/">K FAST AI</a></noscript>`);
     }
     if (pathname === '/old') { res.writeHead(301, { Location: '/old/' + (url.search || '') }); return res.end(); }
     // الواجهة القديمة: منحط رقم نسخة على app.js و app.css
