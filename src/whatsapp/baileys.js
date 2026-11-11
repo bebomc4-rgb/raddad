@@ -560,12 +560,20 @@ async function bookResync(tenantId, sock, state, rebuild = false) {
   if (!contactsOn(tenantId) || typeof sock.resyncAppState !== 'function') return;
   const flag = bookFlag(tenantId);
   if (!rebuild && bookReady(tenantId) && fs.existsSync(flag)) return;
-  if (rebuild) rebuilding.set(String(tenantId), new Set());
+  if (rebuild) { const st = new Set(); st.at = Date.now(); rebuilding.set(String(tenantId), st); }
   const before = Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length;
   console.log(`[wa] tenant ${tenantId}: fetching your saved contact names from WhatsApp…`);
-  await state.keys.set({ 'app-state-sync-version': { critical_unblock_low: null } }); // من الصفر = نسخة كاملة
-  await sock.resyncAppState(['critical_unblock_low'], true);
-  await new Promise(r => setTimeout(r, 4000));
+  // المزامنة أحياناً بتعلق وما بترجع أبداً: كان الحفظ يوقف للأبد (11 تشرين التاني، 4 أرقام ما انحفظت). هلق حد أقصى دقيقتين
+  try {
+    await state.keys.set({ 'app-state-sync-version': { critical_unblock_low: null } }); // من الصفر = نسخة كاملة
+    await Promise.race([sock.resyncAppState(['critical_unblock_low'], true), new Promise((_, no) => setTimeout(() => no(new Error('resync took too long')), 120_000))]);
+    await new Promise(r => setTimeout(r, 4000));
+  } catch (e) {
+    if (rebuild) rebuilding.delete(String(tenantId));
+    console.error(`[wa] tenant ${tenantId}: address book sync failed (${e.message}) — saving goes on with the old list`);
+    setTimeout(() => queueAllKnown(tenantId), 5000);
+    return;
+  }
   const fresh = rebuilding.get(String(tenantId));
   if (fresh) {
     rebuilding.delete(String(tenantId));
@@ -836,7 +844,9 @@ export async function saveContact(tenantId, phone, name, force = false) {
   const s = sessions.get(tenantId), num = String(phone || '').replace(/\D/g, '');
   if (!s?.sock?.addOrEditContact || s.status !== 'open' || num.length < 8) return false;
   if (!bookReady(tenantId)) return false; // ما وصلت أسماءك من الواتس لهلق: ما منلمس شي
-  if (rebuilding.has(String(tenantId))) return false; // عم نعيد بناء الدفتر: منستنّى لنعرف شو محفوظ فعلاً
+  { const rb = rebuilding.get(String(tenantId)); // عم نعيد بناء الدفتر: منستنّى لنعرف شو محفوظ فعلاً (بس لحد 3 دقايق، بعدها منكمّل)
+    if (rb && Date.now() - (rb.at || 0) < 180_000) return false;
+    if (rb) { rebuilding.delete(String(tenantId)); console.log(`[wa] tenant ${tenantId}: rebuild stuck — saving again`); setTimeout(() => queueAllKnown(tenantId), 3000); } }
   // رقم المتجر نفسو وأرقام صاحب المتجر: لا
   try { const t = getTenant(tenantId), own = [phoneFromJid(s.sock.user?.id), ...String(t?.settings?.owner_numbers || '').split(/[,،\s]+/), t?.settings?.notify_number].map(x => String(x || '').replace(/\D/g, '')).filter(Boolean); if (own.some(o => o.endsWith(num.slice(-9)) || num.endsWith(o.slice(-9)))) return false; } catch {}
   const key = tenantId + ':' + num, have = bookName(tenantId, num);
