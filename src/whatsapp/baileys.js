@@ -169,6 +169,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
       setTimeout(() => auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)), 45000); // فحص عند الطلب بس
       clearInterval(s.auditTimer); s.auditTimer = setInterval(() => { auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)); resaveFromFile(tenantId); maybeRebuild(tenantId); }, 30_000); // ملفات الطلب بتتفحص كل 30 ثانية
       setTimeout(() => queueAllKnown(tenantId), 90000); // بعد ما يخلص مزامنة الواتس، منحفظ كل الأرقام يلي راسلت قبل
+      if (Number(tenantId) === KO_TENANT) setTimeout(() => { try { learnCards(tenantId, M.myTexts(tenantId, selfJids(sock))); } catch (e) { console.error('[wa] cards', e.message); } }, 100000);
       { const tt = getTenant(tenantId); if (tt?.bot_enabled) trialStatus(tt); } // بيسجّل الرقم للتجربة بس إذا المجيب شغّال (يلي بدو حفظ الأرقام بس ما بتنحرق تجربتو)
     }
     if (connection === 'close') {
@@ -224,6 +225,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
       for (const c of [...(chats || []), ...(contacts || [])]) { if (/@g\.us$|@broadcast$|@newsletter$/.test(c.id || '')) continue; const p = await phoneFor(c.id, c.pnJid, c.phoneNumber, c.lidJid); if (p) { list.push({ phone: p }); seen(tenantId, p, tsOf(c.conversationTimestamp || c.lastMessageRecvTimestamp)); if (/@lid$/.test(c.id || '')) lidHits++; } }
       for (const m of messages || []) {
         const rj = m.key?.remoteJid || ''; if (/@g\.us$|@broadcast$|@newsletter$|^status@/.test(rj)) continue;
+        if (m.key?.fromMe && Number(tenantId) === KO_TENANT && selfJids(sock).includes(rj.replace(/:\d+@/, '@'))) { const tx = m.message?.conversation || m.message?.extendedTextMessage?.text || ''; if (tx) learnCards(tenantId, [tx]); continue; }
         const p = await phoneFor(rj, m.key?.remoteJidAlt, m.key?.senderPn); if (!p) continue;
         list.push({ phone: p }); seen(tenantId, p, tsOf(m.messageTimestamp));
         if (m.key?.fromMe) continue;
@@ -292,6 +294,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
         if (!m.message) { if (m.messageStubType) console.log(`[wa] tenant ${tenantId}: could not decrypt a message from ${jid} (WhatsApp will resend it)`); continue; }
         if (m.key.fromMe && isBotSent(m.key.id)) continue;
         let { text, mediaNote, quote } = extract(m.message, !m.key.fromMe);
+        if (m.key.fromMe && Number(tenantId) === KO_TENANT && selfJids(sock).includes(jid.replace(/:\d+@/, '@'))) { if (text) learnCards(tenantId, [text]); continue; } // محادثة «أنت»
         const alt = m.key.remoteJidAlt || m.key.senderPn || m.key.participantPn || null;
         let phone = phoneFromJid(jid.endsWith('@s.whatsapp.net') ? jid : alt || '');
         if (phone) seen(tenantId, phone, Number(m.messageTimestamp?.toNumber?.() ?? m.messageTimestamp ?? 0) || Math.floor(Date.now() / 1000));
@@ -505,6 +508,42 @@ export async function setRealName(tenantId, phone, name, area = '') {
   realNames[key] = nm; clearTimeout(namesT); namesT = setTimeout(() => { try { fs.writeFileSync(NAMES_FILE, JSON.stringify(realNames)); } catch {} }, 1500);
   return saveContact(tenantId, num, nm, true);
 }
+// ===== بطاقات الزباين بمحادثة «أنت» (صاحب المتجر، 11 تشرين التاني 2026) =====
+// رسالة فيها سطر اسم ثلاثي + سطر رقم (+ محافظة أو طلب): الرقم بينحفظ بجهات الاتصال بهالاسم
+const GOVS = /^(ال)?(دمشق|ريف دمشق|حلب|حمص|حماة|حماه|اللاذقية|لاذقية|طرطوس|إدلب|ادلب|درعا|السويداء|سويداء|القنيطرة|قنيطرة|دير الزور|الحسكة|حسكة|الرقة|رقة)$/;
+const dig = (x) => String(x).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+export function parseCard(text) {
+  const lines = String(text || '').split(/\n+/).map(l => dig(l).replace(/[\u200e\u200f\u202a-\u202e*_~]/g, '').trim()).filter(Boolean);
+  if (lines.length < 2 || lines.length > 25) return null;
+  let pi = -1, phone = '';
+  for (let i = 0; i < lines.length && pi < 0; i++) {
+    const raw = lines[i].replace(/^(رقم(ه|و)?|الرقم|موبايل|الموبايل|هاتف|الهاتف|واتس(اب)?|phone|tel)\s*[:：-]?\s*/i, '');
+    const d = raw.replace(/[\s\-().]/g, '');
+    if (!/^(\+|00)?\d{9,15}$/.test(d)) continue;
+    let n = d.replace(/^\+/, '').replace(/^00/, '');
+    if (/^09\d{8}$/.test(n)) n = '963' + n.slice(1); else if (/^9\d{8}$/.test(n)) n = '963' + n; else if (/^9630\d{9}$/.test(n)) n = '963' + n.slice(4);
+    if (n.length < 10) continue;
+    pi = i; phone = n;
+  }
+  if (pi < 0) return null;
+  const okName = (l) => { const t = l.replace(/^(الاسم( الثلاثي)?|اسم(ه|و)?|name)\s*[:：-]?\s*/i, '').replace(/[،,.:]+$/, '').replace(/\s+/g, ' ').trim(); const w = t.split(' ');
+    return /\d/.test(t) || w.length < 2 || w.length > 5 || t.length > 45 || !/^[\p{L}\s'ـ-]+$/u.test(t) || GOVS.test(t) ? '' : t; };
+  let name = '';
+  for (let i = pi - 1; i >= 0 && !name; i--) name = okName(lines[i]); // السطر يلي فوق الرقم أول شي
+  for (let i = 0; i < lines.length && !name; i++) if (i !== pi) name = okName(lines[i]);
+  return name ? { phone, name } : null;
+}
+function learnCards(tenantId, texts) {
+  const out = [];
+  for (const t of texts || []) { const c = parseCard(t); if (!c) continue; realNames[tenantId + ':' + c.phone] = c.name; out.push(c); }
+  if (!out.length) return 0;
+  clearTimeout(namesT); namesT = setTimeout(() => { try { fs.writeFileSync(NAMES_FILE, JSON.stringify(realNames)); } catch {} }, 1500);
+  queueContacts(tenantId, out);
+  console.log(`[wa] tenant ${tenantId}: ${out.length} customer cards from your «You» chat`);
+  return out.length;
+}
+const selfJids = (sock) => { const p = phoneFromJid(sock?.user?.id), l = String(sock?.user?.lid || '').replace(/:\d+@/, '@'); return [p ? p + '@s.whatsapp.net' : '', l].filter(Boolean); };
+
 // أسماء زباين موقع KO SPORT (يلي سجّلو حساب): «الاسم المحافظة» متل ما بيكتبهن صاحب المتجر (مثلاً «مرهف سويداء»).
 // بتنحفظ بس للرقم يلي ما إلو اسم أو اسمو «زبون XXXX» — أي اسم حقيقي محفوظ ما بيتغيّر أبداً
 export function siteNames(tenantId, list) {
@@ -857,7 +896,7 @@ export async function saveContact(tenantId, phone, name, force = false) {
     if (have === real || (real && have.startsWith(real + ' ') && /^\d{4,}$/.test(have.slice(real.length + 1)))) return true;
     // القاعدة المطلقة (صاحب المتجر): أي اسم حقيقي محفوظ ما بيتغيّر أبداً، مين ما كان حاططو. بيتغيّر بس «زبون XXXX» لاسم كتبو الزبون نفسو
     // (1 تشرين التاني: اسم حقيقي انقلب «زبون XXXX» لأنو كان في استثناء هون للأسماء يلي البوت حاططها)
-    if (!isPh(tenantId, have)) return true;
+    if (!isPh(tenantId, have) && !(real && saved[key] && have === saved[key] && real.split(' ').length >= have.replace(/ \d{4,}$/, '').split(' ').length)) return true;
     if (isPh(tenantId, have) && !real) return true;
   }
   const full = real ? uniqueName(tenantId, real, num, false) : uniqueName(tenantId, prefixOf(tenantId) + ' ' + num.slice(-4), num, true);
@@ -876,7 +915,7 @@ const bulk = new Map(); // tenantId -> Map(num -> name)
 let bulkTimer = null;
 export function queueContacts(tenantId, list) {
   const m = bulk.get(tenantId) || new Map(); let n = 0; const pre = prefixOf(tenantId);
-  for (const { phone, name } of list) { const num = String(phone || '').replace(/\D/g, ''); const bk = bookName(tenantId, num); if (num.length >= 8 && !m.has(num) && (() => { const k = tenantId + ':' + num, sv = saved[k], rn = realNames[k], want = rn || (pre + ' ' + num.slice(-4)); if (!bk) return true; if (isPh(tenantId, bk)) return !!rn && bk !== rn; return false; /* اسم حقيقي محفوظ: ما منلمسو أبداً */ })()) { m.set(num, name || ''); n++; } }
+  for (const { phone, name } of list) { const num = String(phone || '').replace(/\D/g, ''); const bk = bookName(tenantId, num); if (num.length >= 8 && !m.has(num) && (() => { const k = tenantId + ':' + num, sv = saved[k], rn = realNames[k], want = rn || (pre + ' ' + num.slice(-4)); if (!bk) return true; if (isPh(tenantId, bk)) return !!rn && bk !== rn; if (rn && sv && bk === sv && bk !== rn && rn.split(' ').length >= bk.split(' ').length) return true; return false; /* اسم حقيقي محفوظ: ما منلمسو أبداً */ })()) { m.set(num, name || ''); n++; } }
   bulk.set(tenantId, m);
   if (n) console.log(`[wa] tenant ${tenantId}: ${n} numbers queued to save in contacts`);
   if (!bulkTimer) bulkTimer = setInterval(async () => {

@@ -208,3 +208,9 @@ export function backfill(tenantId, rows) {
   flag(tenantId, 'backfill', Date.now());
   return n;
 }
+
+// رسائلك بمحادثة «أنت» (بطاقات زباين: اسم + رقم + محافظة/طلب)
+export function myTexts(tenantId, jids, limit = 5000) {
+  const J = (jids || []).filter(Boolean); if (!J.length) return [];
+  return q.all(`SELECT text FROM msgs WHERE tenant_id = ? AND jid IN (${J.map(() => '?').join(',')}) AND from_me = 1 AND text IS NOT NULL AND text <> '' ORDER BY ts DESC LIMIT ?`, tenantId, ...J, limit).map(r => r.text);
+}
