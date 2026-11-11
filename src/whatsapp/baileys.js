@@ -650,7 +650,19 @@ const isPlaceholder = (n) => /^زبون \d{4}$/.test(String(n || '').trim());
 // الاسم يلي البوت بيحطو للرقم: «<البادئة> 1234». البادئة بيختارها الزبون (الافتراضي «زبون»)
 const prefixOf = tenantId => { try { return String(getTenant(tenantId)?.settings?.contacts_prefix || 'زبون').replace(/[\d\n\r]/g, '').trim().slice(0, 24) || 'زبون'; } catch { return 'زبون'; } };
 const escRe = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const isPh = (tenantId, n) => isPlaceholder(n) || new RegExp('^' + escRe(prefixOf(tenantId)) + ' \\d{4}$').test(String(n || '').trim());
+const isPh = (tenantId, n) => isPlaceholder(n) || new RegExp('^' + escRe(prefixOf(tenantId)) + ' \\d{4,}$').test(String(n || '').trim());
+// اسم ما بيتشابه مع ولا اسم تاني محفوظ (صاحب المتجر، 11 تشرين التاني 2026):
+// «زبون 1234» إذا موجود لرقم تاني ← «زبون 51234» ← «زبون 651234»… واسم حقيقي مكرر لرقم تاني بينضافلو آخر 4 (أو 5، 6…) أرقام
+function uniqueName(tenantId, base, num, placeholder) {
+  const pre = tenantId + ':', taken = new Set();
+  for (const [k, v] of Object.entries(book)) if (k.startsWith(pre) && k !== pre + num && v) taken.add(String(v).trim());
+  if (!taken.has(base)) return base;
+  for (let L = placeholder ? 5 : 4; L <= num.length; L++) {
+    const m = placeholder ? prefixOf(tenantId) + ' ' + num.slice(-L) : base + ' ' + num.slice(-L);
+    if (!taken.has(m)) return m;
+  }
+  return base + ' ' + num;
+}
 // سجل Baileys بس للرسائل يلي إلها علاقة بمزامنة جهات الاتصال (بحد أقصى 400 سطر لكل تشغيل)
 let syncLogN = 0;
 const SYNC_KW = /sync|app.?state|snapshot|critical_unblock_low|missing key|blocked|patch/i;
@@ -804,13 +816,13 @@ export async function saveContact(tenantId, phone, name, force = false) {
   const real = /[\p{L}]{2,}/u.test(nm) ? nm.slice(0, 60) : '';
   if (have) {
     // محفوظ عندك باسم: ما منغيّرو أبداً. بس إذا الاسم «زبون XXXX» ومنعرف الاسم الحقيقي، منبدّلو
-    if (have === real) return true;
+    if (have === real || (real && have.startsWith(real + ' ') && /^\d{4,}$/.test(have.slice(real.length + 1)))) return true;
     // القاعدة المطلقة (صاحب المتجر): أي اسم حقيقي محفوظ ما بيتغيّر أبداً، مين ما كان حاططو. بيتغيّر بس «زبون XXXX» لاسم كتبو الزبون نفسو
     // (1 تشرين التاني: اسم حقيقي انقلب «زبون XXXX» لأنو كان في استثناء هون للأسماء يلي البوت حاططها)
     if (!isPh(tenantId, have)) return true;
     if (isPh(tenantId, have) && !real) return true;
   }
-  const full = real || (prefixOf(tenantId) + ' ' + num.slice(-4));
+  const full = real ? uniqueName(tenantId, real, num, false) : uniqueName(tenantId, prefixOf(tenantId) + ' ' + num.slice(-4), num, true);
   try {
     s.lastSyncErr = null;
     await s.sock.addOrEditContact(num + '@s.whatsapp.net', { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true });
