@@ -167,7 +167,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
       clearInterval(s.saveTimer); s.saveTimer = setInterval(() => queueAllKnown(tenantId), 10 * 60_000);
       setTimeout(() => bookResync(tenantId, sock, state).catch(e => console.error('[wa] address book sync', e.message)), 20000); // منجيب أسماء جهات اتصالك كلها من الواتس
       setTimeout(() => auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)), 45000); // فحص عند الطلب بس
-      clearInterval(s.auditTimer); s.auditTimer = setInterval(() => { auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)); resaveFromFile(tenantId); }, 30_000); // ملفات الطلب بتتفحص كل 30 ثانية
+      clearInterval(s.auditTimer); s.auditTimer = setInterval(() => { auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)); resaveFromFile(tenantId); maybeRebuild(tenantId); }, 30_000); // ملفات الطلب بتتفحص كل 30 ثانية
       setTimeout(() => queueAllKnown(tenantId), 90000); // بعد ما يخلص مزامنة الواتس، منحفظ كل الأرقام يلي راسلت قبل
       { const tt = getTenant(tenantId); if (tt?.bot_enabled) trialStatus(tt); } // بيسجّل الرقم للتجربة بس إذا المجيب شغّال (يلي بدو حفظ الأرقام بس ما بتنحرق تجربتو)
     }
@@ -536,12 +536,15 @@ try {
   }
 } catch (e) { console.error('[wa] merge contacts', e.message); }
 let bookT = null, bookSeen = 0;
+// إعادة بناء دفتر العناوين من الصفر (صاحب المتجر حذف جهات اتصال أو رجّعها من ملف):
+// منسجّل كل اسم بيوصل خلال المزامنة الكاملة، وبالآخر منشيل من نسخة البوت كل رقم ما عاد محفوظ عندك
+const rebuilding = new Map(); // tenantId → Set(keys)
 export function noteContacts(tenantId, list) {
-  let n = 0;
+  let n = 0; const fresh = rebuilding.get(String(tenantId));
   for (const c of list || []) {
     const id = String(c.id || ''), pn = /@s\.whatsapp\.net$/.test(id) ? id : String(c.phoneNumber || '');
     const num = pn.split('@')[0].split(':')[0].replace(/\D/g, ''), nm = String(c.name || '').trim();
-    if (num.length >= 8 && nm) { book[tenantId + ':' + num] = nm; n++; }
+    if (num.length >= 8 && nm) { book[tenantId + ':' + num] = nm; n++; if (fresh) fresh.add(tenantId + ':' + num); }
   }
   if (n) { bookSeen += n; clearTimeout(bookT); bookT = setTimeout(() => { try { writeJsonSafe(BOOK_FILE, book); } catch {} }, 2000); }
 }
@@ -553,15 +556,26 @@ export function bookName(tenantId, phone) {
   return k ? book[k] : '';
 }
 // منطلب من الواتس نسخة كاملة من جهات الاتصال (الأسماء المحفوظة عندك) مشان نعرف مين مسجّل ومين لأ
-async function bookResync(tenantId, sock, state) {
+async function bookResync(tenantId, sock, state, rebuild = false) {
   if (!contactsOn(tenantId) || typeof sock.resyncAppState !== 'function') return;
   const flag = bookFlag(tenantId);
-  if (bookReady(tenantId) && fs.existsSync(flag)) return;
+  if (!rebuild && bookReady(tenantId) && fs.existsSync(flag)) return;
+  if (rebuild) rebuilding.set(String(tenantId), new Set());
   const before = Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length;
   console.log(`[wa] tenant ${tenantId}: fetching your saved contact names from WhatsApp…`);
   await state.keys.set({ 'app-state-sync-version': { critical_unblock_low: null } }); // من الصفر = نسخة كاملة
   await sock.resyncAppState(['critical_unblock_low'], true);
   await new Promise(r => setTimeout(r, 4000));
+  const fresh = rebuilding.get(String(tenantId));
+  if (fresh) {
+    rebuilding.delete(String(tenantId));
+    // أمان: إذا وصل عدد قليل كتير (مزامنة ناقصة) ما منشيل شي
+    if (fresh.size >= 50 && fresh.size >= before * 0.3) {
+      let gone = 0; for (const k of Object.keys(book)) if (k.startsWith(tenantId + ':') && !fresh.has(k)) { delete book[k]; delete saved[k]; gone++; }
+      try { writeJsonSafe(BOOK_FILE, book); writeJsonSafe(SAVED_FILE, saved); } catch {}
+      console.log(`[wa] tenant ${tenantId}: address book rebuilt — ${fresh.size} saved on your phone, ${gone} not there any more (will be saved again)`);
+    } else console.log(`[wa] tenant ${tenantId}: rebuild got only ${fresh.size} names — kept the old list`);
+  }
   const after = Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length;
   console.log(`[wa] tenant ${tenantId}: address book now has ${after} saved names (was ${before})`);
   try { fs.writeFileSync(flag, new Date().toISOString()); } catch {} // وصل دفتر العناوين (حتى لو فيه أسماء قليلة)
@@ -646,7 +660,20 @@ function rememberHistory(tenantId, list) {
 const bookFlag = tenantId => path.join(DATA_DIR, `wa-book-synced-${tenantId}.txt`);
 // الدفتر لازم يكون محمّل فعلاً (مو بس علامة إنو انمزامن مرة): إذا فاضي ما منلمس ولا رقم
 const bookReady = (tenantId) => Object.keys(book).filter(k => k.startsWith(tenantId + ':')).length >= 50;
-const isPlaceholder = (n) => /^زبون \d{4}$/.test(String(n || '').trim());
+const isPlaceholder = (n) => /^زبون \d{4,}$/.test(String(n || '').trim());
+// طلب إعادة بناء الدفتر: ملف deploy/contacts-rebuild بالمستودع (أي تغيير فيه = إعادة بناء مرة وحدة)، وكمان كل 24 ساعة لحالو
+const REBUILD_REQ = path.join(process.cwd(), 'deploy', 'contacts-rebuild');
+function maybeRebuild(tenantId) {
+  if (Number(tenantId) !== KO_TENANT || rebuilding.size) return;
+  const s = sessions.get(tenantId); if (!s?.sock || s.status !== 'open') return;
+  let want = ''; try { want = fs.readFileSync(REBUILD_REQ, 'utf8').trim(); } catch {}
+  const doneF = path.join(DATA_DIR, `wa-book-rebuilt-${tenantId}.txt`); let done = ''; try { done = fs.readFileSync(doneF, 'utf8').trim(); } catch {}
+  const [doneReq, doneAt] = done.split('|'); const day = Date.now() - (Number(doneAt) || 0) > 24 * 3600_000;
+  if (!(want && want !== doneReq) && !day) return;
+  try { fs.writeFileSync(doneF, (want || doneReq || '') + '|' + Date.now()); } catch {}
+  console.log(`[wa] tenant ${tenantId}: rebuilding the address book from WhatsApp${want && want !== doneReq ? ' (asked)' : ' (daily)'}`);
+  bookResync(tenantId, s.sock, { keys: s.sock.authState.keys }, true).then(() => setTimeout(() => queueAllKnown(tenantId), 5000)).catch(e => { rebuilding.delete(String(tenantId)); console.error('[wa] rebuild', e.message); });
+}
 // الاسم يلي البوت بيحطو للرقم: «<البادئة> 1234». البادئة بيختارها الزبون (الافتراضي «زبون»)
 const prefixOf = tenantId => { try { return String(getTenant(tenantId)?.settings?.contacts_prefix || 'زبون').replace(/[\d\n\r]/g, '').trim().slice(0, 24) || 'زبون'; } catch { return 'زبون'; } };
 const escRe = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -809,6 +836,7 @@ export async function saveContact(tenantId, phone, name, force = false) {
   const s = sessions.get(tenantId), num = String(phone || '').replace(/\D/g, '');
   if (!s?.sock?.addOrEditContact || s.status !== 'open' || num.length < 8) return false;
   if (!bookReady(tenantId)) return false; // ما وصلت أسماءك من الواتس لهلق: ما منلمس شي
+  if (rebuilding.has(String(tenantId))) return false; // عم نعيد بناء الدفتر: منستنّى لنعرف شو محفوظ فعلاً
   // رقم المتجر نفسو وأرقام صاحب المتجر: لا
   try { const t = getTenant(tenantId), own = [phoneFromJid(s.sock.user?.id), ...String(t?.settings?.owner_numbers || '').split(/[,،\s]+/), t?.settings?.notify_number].map(x => String(x || '').replace(/\D/g, '')).filter(Boolean); if (own.some(o => o.endsWith(num.slice(-9)) || num.endsWith(o.slice(-9)))) return false; } catch {}
   const key = tenantId + ':' + num, have = bookName(tenantId, num);
