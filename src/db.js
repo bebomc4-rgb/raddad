@@ -364,6 +364,19 @@ const migrations = [
   INSERT INTO service_prices (service_id, months, price) VALUES ('wa_products', 1, 5), ('wa_products', 3, 15), ('wa_products', 6, 30), ('wa_products', 12, 60)
   ON CONFLICT(service_id, months) DO UPDATE SET price = excluded.price;
   UPDATE services SET is_public = 1 WHERE id = 'wa_products';
+  `,
+  // 24: استهلاك الذكاء الاصطناعي لكل متجر: كم طلب وكم توكن ومن أي عقل (صاحب المنصة، 11 تشرين التاني 2026)
+  `
+  CREATE TABLE IF NOT EXISTS ai_usage (
+    tenant_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    via TEXT NOT NULL DEFAULT '',
+    calls INTEGER NOT NULL DEFAULT 0,
+    tok_in INTEGER NOT NULL DEFAULT 0,
+    tok_cached INTEGER NOT NULL DEFAULT 0,
+    tok_out INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (tenant_id, day, via)
+  );
   `
 ];
 
@@ -413,6 +426,18 @@ export function bumpUsage(tenantId, field, n = 1) {
   if (!allowed.includes(field)) return;
   q.run(`INSERT INTO usage (tenant_id, day, ${field}) VALUES (?, ?, ?)
          ON CONFLICT(tenant_id, day) DO UPDATE SET ${field} = ${field} + excluded.${field}`, tenantId, today(), n);
+}
+// كل طلب للذكاء الاصطناعي: كم توكن دخل (ومنو كم من الذاكرة)، وكم طلع، ومن أي عقل
+export function recordAI(tenantId, via, usage) {
+  try {
+    if (!tenantId || !usage) return;
+    const u = usage, inp = Number(u.prompt_tokens ?? u.promptTokenCount ?? u.input_tokens ?? 0) || 0;
+    const out = Number(u.completion_tokens ?? u.candidatesTokenCount ?? u.output_tokens ?? 0) || 0;
+    const cached = Number(u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens ?? u.cachedContentTokenCount ?? 0) || 0;
+    q.run(`INSERT INTO ai_usage (tenant_id, day, via, calls, tok_in, tok_cached, tok_out) VALUES (?, ?, ?, 1, ?, ?, ?)
+           ON CONFLICT(tenant_id, day, via) DO UPDATE SET calls = calls + 1, tok_in = tok_in + excluded.tok_in, tok_cached = tok_cached + excluded.tok_cached, tok_out = tok_out + excluded.tok_out`,
+      tenantId, today(), String(via || '').slice(0, 60), inp, cached, out);
+  } catch (e) { console.error('[usage] ai', e.message); }
 }
 export function usageToday(tenantId) {
   return q.get('SELECT * FROM usage WHERE tenant_id = ? AND day = ?', tenantId, today())

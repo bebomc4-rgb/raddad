@@ -30,6 +30,7 @@ export async function overview(view) {
         <a class="card stat" href="#/bot/inbox"><span class="k">مو مقروءة</span><span class="v num">${n(c.unread)}</span><span class="tiny faint">${n(c.needs_human)} بدهن موظف</span></a>
         <a class="card stat" href="#/bot/orders"><span class="k">طلبات جديدة</span><span class="v num">${n(c.new_orders)}</span></a>
       </div>
+      <div data-ai-usage></div>
       <div class="grid g3">
         ${[['/bot/inbox', 'chat', 'blue', 'المحادثات', 'شوف شو عم يحكي مع زباينك، ورد بإيدك'], ['/bot/orders', 'bag', 'gold', 'الطلبات', 'كل طلب أخدو المجيب، مع الاسم والعنوان'],
            ['/bot/products', 'box', 'violet', 'المنتجات', `${n(c.products)} منتج بيعرفهن المجيب`], ['/bot/settings', 'sliders', 'blue', 'شخصية المجيب', 'اسمو، أسلوبو، ومعلومات متجرك'], ['/bot/learn', 'sparkle', 'gold', 'علّم المجيب', 'علّمو أجوبة متجرك، أو خليه يتعلّم من محادثاتك'],
@@ -38,6 +39,7 @@ export async function overview(view) {
     </div>`);
   };
   await paint();
+  aiUsage(view);
   view.on('click', '[data-buy-bot]', async (e) => {
     e.preventDefault();
     try { const b = await api('/api/v2/billing'); const plan = (b.plans || []).find(x => x.id !== 'free'); if (!plan) throw new Error('ما في باقة للمجيب لسا'); checkout({ kind: 'plan', id: plan.id, months: 1, onDone: () => location.reload() }); } catch (err) { fail(err); }
@@ -432,4 +434,24 @@ export async function stories(view) {
   view.on('change', '[data-on]', async (e, i) => { try { await save({ enabled: i.checked }); toast(i.checked ? 'الحالات اشتغلت ✓' : 'وقفت الحالات'); } catch (err) { fail(err); i.checked = !i.checked; } });
   view.on('click', '[data-per] button', async (e, b) => { try { await save({ per_day: Number(b.dataset.p) }); } catch (err) { fail(err); } });
   view.on('click', '[data-now]', (e, b) => busy(b, async () => { try { const r = await api('/api/v2/stories/now', { method: 'POST', body: {} }); toast(`انتشرت حالة «${r.name}» لـ ${n(r.to)} رقم ✓`); await paint(); } catch (err) { fail(err); } }));
+}
+
+// ===== الاستهلاك: كم رد، كم محادثة، كم توكن، وكم بيكلّف لو كان مدفوع =====
+async function aiUsage(view) {
+  let u; try { u = await api('/api/v2/ai-usage'); } catch { return; }
+  const box = document.querySelector('[data-ai-usage]'); if (!box || !view.alive) return;
+  const d = u.days || [], today = new Date().toISOString().slice(0, 10), t = d.find(x => x.day === today) || { calls: 0, convos: 0, cost: 0, tok_in: 0, tok_out: 0, brains: {}, per_reply_tokens: 0 };
+  const last = d.filter(x => x.calls).slice(-7).reverse(), usd = (v) => '$' + (v < 0.01 && v > 0 ? v.toFixed(4) : v.toFixed(2));
+  const brains = Object.entries(t.brains || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}: ${n(v)}`).join(' · ');
+  box.innerHTML = str(html`<div class="card pad-lg">
+    <div class="row between"><h3>الاستهلاك</h3><span class="tiny faint">التكلفة محسوبة لو كل الردود على DeepSeek المدفوع</span></div>
+    <div class="grid g4" style="margin-top:12px">
+      <div class="card stat"><span class="k">ردود الذكاء اليوم</span><span class="v num">${n(t.calls)}</span></div>
+      <div class="card stat"><span class="k">محادثات اليوم</span><span class="v num">${n(t.convos)}</span><span class="tiny faint">${t.convos ? 'شي ' + n(Math.round(t.calls / t.convos)) + ' رد بالمحادثة' : ''}</span></div>
+      <div class="card stat"><span class="k">حجم الرد</span><span class="v num">${n(t.per_reply_tokens)}</span><span class="tiny faint">توكن بالرد</span></div>
+      <div class="card stat"><span class="k">تكلفة اليوم</span><span class="v num">${usd(t.cost)}</span><span class="tiny faint">${u.avg ? 'بالشهر تقريباً ' + usd(u.month_cost) : ''}</span></div>
+    </div>
+    ${brains ? html`<div class="tiny muted" style="margin-top:10px">العقول اليوم: ${brains}</div>` : ''}
+    ${last.length ? html`<div style="margin-top:12px;overflow:auto"><table class="tbl"><thead><tr><th>اليوم</th><th>ردود</th><th>محادثات</th><th>توكن/رد</th><th>تكلفة</th></tr></thead><tbody>${last.map(x => html`<tr><td>${x.day}</td><td>${n(x.calls)}</td><td>${n(x.convos)}</td><td>${n(x.per_reply_tokens)}</td><td>${usd(x.cost)}</td></tr>`)}</tbody></table></div>` : html`<p class="tiny faint" style="margin-top:10px">العدّاد بلّش هلق، بتبيّن الأرقام مع أول ردود.</p>`}
+  </div>`);
 }

@@ -81,7 +81,12 @@ const isLocal = b => /localhost|127\.0\.0\.1|\[::1\]/.test(b.base_url || '');
 const isFreeGemini = b => b.kind === 'gemini' && !isLocal(b) && !/مدفوع|paid|\$/i.test(b.name || '');
 
 // استدعاء مع تجربة المزوّد الاحتياطي إذا فشل الأول
-export async function chat(providers, { system, messages, json = true, temperature = 0.6, maxTokens = 900 }) {
+export async function chat(providers, opts) {
+  const r = await chatRaw(providers, opts);
+  if (opts?.tenantId) { try { const { recordAI } = await import('./db.js'); recordAI(opts.tenantId, r.via, r.usage); } catch {} }
+  return r;
+}
+async function chatRaw(providers, { system, messages, json = true, temperature = 0.6, maxTokens = 900 }) {
   if (!providers.length) throw new AIError('ما في مفتاح ذكاء اصطناعي مضبوط. ضيف مفتاح من الإعدادات.', 0);
   let lastErr;
   const gemOff = geminiBlockedUntil > Date.now() && providers.some(p => p.kind !== 'gemini' && p.kind !== 'mock');
@@ -96,7 +101,7 @@ export async function chat(providers, { system, messages, json = true, temperatu
       return { ...r, via: p.name || p.slot || 'own' };
     } catch (e) {
       lastErr = e; console.error(`[ai] ${p.name || p.provider} failed: ${e.message}`);
-      if (p.kind === 'gemini' && /location|not supported|FAILED_PRECONDITION|fetch failed|ENOTFOUND|ECONN|ETIMEDOUT|timeout|aborted|\b403\b/i.test(e.message + ' ' + (e.status || ''))) { geminiBlockedUntil = Date.now() + 15 * 60_000; console.error('[ai] Gemini مو واصل من هون — منستعمل Cloudflare/غيرو لربع ساعة'); if (providers.some(x => x.kind !== 'gemini' && x.kind !== 'mock')) { const rest = providers.filter(x => x.kind !== 'gemini'); return chat(rest, { system, messages, json, temperature, maxTokens }); } }
+      if (p.kind === 'gemini' && /location|not supported|FAILED_PRECONDITION|fetch failed|ENOTFOUND|ECONN|ETIMEDOUT|timeout|aborted|\b403\b/i.test(e.message + ' ' + (e.status || ''))) { geminiBlockedUntil = Date.now() + 15 * 60_000; console.error('[ai] Gemini مو واصل من هون — منستعمل Cloudflare/غيرو لربع ساعة'); if (providers.some(x => x.kind !== 'gemini' && x.kind !== 'mock')) { const rest = providers.filter(x => x.kind !== 'gemini'); return chatRaw(rest, { system, messages, json, temperature, maxTokens }); } }
       if (p.slot) cooldown.set(p.slot, Date.now() + (/حصة|quota|429|rate|limit|رصيد|balance|402/i.test(e.message + ' ' + (e.status || '')) ? 30 : 3) * 60_000);
     }
   }

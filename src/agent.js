@@ -357,13 +357,13 @@ export async function think(tenant, contact, history) {
   if (shots.length && merged.length && merged[0].role === 'user') merged[0] = { ...merged[0], content: '[زبون جديد — محادثة حقيقية]\n' + merged[0].content };
   const route = classifyQuestion(history);
   let res;
-  try { res = await chat(resolveAI(tenant, { prefer: route }), { system, messages: [...shots, ...merged], json: true, temperature: 0.5 }); }
+  try { res = await chat(resolveAI(tenant, { prefer: route }), { system, messages: [...shots, ...merged], json: true, temperature: 0.5, tenantId: tenant.id }); }
   catch (e) {
     // العقل المحلي ذاكرتو محدودة: إذا الطلب طويل منقصّرو (منتجات أقل، بلا أمثلة، آخر رسائل بس) ومنجرّب مرة تانية
     if (!/context|exceeds|too long|maximum.*tokens/i.test(e.message)) throw e;
     console.log(`[agent] tenant ${tenant.id}: request too long for the brain → retrying shorter`);
     const short = buildSystemPrompt({ tenant, k, s, products: products.slice(0, 4).map(p => ({ ...p, description: String(p.description || '').slice(0, 120) })), cat: { total: cat.total, cats: cat.cats.slice(0, 8) }, contact, prevOrders: prevOrders.slice(0, 1), examples: [] }) + girlNote + (koNote ? `\n\n## انتبه للإملاء والمعاني\n${koNote.slice(0, 1200)}` : '') + personNote + voiceNote;
-    res = await chat(resolveAI(tenant, { prefer: route }), { system: short, messages: merged.slice(-6), json: true, temperature: 0.5 });
+    res = await chat(resolveAI(tenant, { prefer: route }), { system: short, messages: merged.slice(-6), json: true, temperature: 0.5, tenantId: tenant.id });
   }
   const { text, via } = res;
   if (contact) console.log(`[agent] tenant ${tenant.id}: ${route === 'smart' ? 'complex' : 'simple'} question → answered by ${via}`);

@@ -158,6 +158,28 @@ r.get('/api/v2/me', ctx => {
 });
 
 // إعدادات المجيب ومعلومات المتجر (بدون ما نلمس التجربة)
+// استهلاك الذكاء الاصطناعي لهالمتجر: آخر 30 يوم، وكم بيكلّف لو كان كلو مدفوع على DeepSeek V4 Flash
+// (أسعار 11 تشرين التاني 2026 لكل مليون توكن: داخل 0.14$، داخل من الذاكرة 0.0028$، طالع 0.28$)
+const DS = { in: 0.14, cached: 0.0028, out: 0.28 };
+r.get('/api/v2/ai-usage', ctx => {
+  auth(ctx);
+  const t = ctx.tenant, since = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  const rows = q.all('SELECT day, via, calls, tok_in, tok_cached, tok_out FROM ai_usage WHERE tenant_id = ? AND day >= ? ORDER BY day', t.id, since);
+  const convos = q.all("SELECT date(created_at, 'unixepoch') day, COUNT(DISTINCT contact_id) n FROM messages WHERE tenant_id = ? AND direction = 'in' AND created_at >= unixepoch(?) GROUP BY 1", t.id, since);
+  const cost = (x) => ((x.tok_in - x.tok_cached) * DS.in + x.tok_cached * DS.cached + x.tok_out * DS.out) / 1e6;
+  const days = new Map();
+  for (const x of rows) {
+    const d = days.get(x.day) || { day: x.day, calls: 0, tok_in: 0, tok_cached: 0, tok_out: 0, convos: 0, brains: {} };
+    d.calls += x.calls; d.tok_in += x.tok_in; d.tok_cached += x.tok_cached; d.tok_out += x.tok_out; d.brains[x.via || '—'] = (d.brains[x.via || '—'] || 0) + x.calls;
+    days.set(x.day, d);
+  }
+  for (const c of convos) { const d = days.get(c.day) || { day: c.day, calls: 0, tok_in: 0, tok_cached: 0, tok_out: 0, convos: 0, brains: {} }; d.convos = c.n; days.set(c.day, d); }
+  const list = [...days.values()].sort((a, b) => a.day.localeCompare(b.day)).map(d => ({ ...d, cost: +cost(d).toFixed(4), per_reply_tokens: d.calls ? Math.round((d.tok_in + d.tok_out) / d.calls) : 0 }));
+  const withData = list.filter(d => d.calls), sum = (k) => withData.reduce((a, d) => a + d[k], 0);
+  const avgDay = withData.length ? { calls: sum('calls') / withData.length, convos: sum('convos') / withData.length, cost: sum('cost') / withData.length } : null;
+  return { days: list, avg: avgDay, month_cost: avgDay ? +(avgDay.cost * 30).toFixed(2) : 0, prices: DS, since };
+});
+
 r.get('/api/v2/bot-settings', ctx => {
   auth(ctx);
   const t = ctx.tenant;
