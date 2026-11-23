@@ -546,12 +546,21 @@ const selfJids = (sock) => { const p = phoneFromJid(sock?.user?.id), l = String(
 
 // أسماء زباين موقع KO SPORT (يلي سجّلو حساب): «الاسم المحافظة» متل ما بيكتبهن صاحب المتجر (مثلاً «مرهف سويداء»).
 // بتنحفظ بس للرقم يلي ما إلو اسم أو اسمو «زبون XXXX» — أي اسم حقيقي محفوظ ما بيتغيّر أبداً
+// فحص (23/11/2026: «زباين بيسجّلو بالموقع واسمن ما عم ينحفظ»): آخر 40 اسم وصلو من الموقع، لـ /api/diag
+const siteLast = [];
+export function contactsDiag(tenantId) {
+  const pre = tenantId + ':', cnt = (o) => Object.keys(o).filter(k => k.startsWith(pre)).length, s = sessions.get(tenantId);
+  let svc = {}; try { svc = { contacts_new: hasService(tenantId, 'contacts_new'), contacts_old: hasService(tenantId, 'contacts_old'), on: contactsOn(tenantId) }; } catch (e) { svc = { err: e.message }; }
+  return { svc, active: (() => { try { return isActive(); } catch { return null; } })(), frozen: (() => { try { return frozen(); } catch { return null; } })(), bookReady: bookReady(tenantId), book: cnt(book), saved: cnt(saved), realNames: cnt(realNames), queue: bulk.get(tenantId)?.size || 0, wa: s?.status || null, canSave: !!s?.sock?.addOrEditContact, lastSyncErr: s?.lastSyncErr || null,
+    site: siteLast.filter(x => x.t === tenantId).map(x => { const k = pre + x.phone; return { at: x.at, ph: x.phone.slice(-4), name: x.name, real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }; }) };
+}
 export function siteNames(tenantId, list) {
   const out = [];
   for (const x of list || []) {
     const num = String(x.phone || '').replace(/\D/g, ''), nm = String(x.name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
     if (num.length < 8 || !/[\p{L}]{2,}/u.test(nm)) continue;
     const key = tenantId + ':' + num; realNames[key] = nm; out.push({ phone: num, name: nm });
+    if (list.length <= 5) { siteLast.push({ t: tenantId, at: new Date().toISOString(), phone: num, name: nm }); if (siteLast.length > 40) siteLast.shift(); }
   }
   if (!out.length) return 0;
   clearTimeout(namesT); namesT = setTimeout(() => { try { fs.writeFileSync(NAMES_FILE, JSON.stringify(realNames)); } catch {} }, 1500);
