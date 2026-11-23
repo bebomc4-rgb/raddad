@@ -563,6 +563,7 @@ export function contactsDiag(tenantId) {
       const lines = t.split('\n'), grep = {}; for (const n of ph) grep[n.slice(-4)] = lines.filter(l => l.includes(n)).slice(-10).map(l => l.slice(0, 200));
       const stuck = Object.keys(book).filter(k => k.startsWith(pre) && isPh(tenantId, book[k]) && realNames[k] && !isPh(tenantId, realNames[k])).map(k => ({ phone: k.slice(pre.length), book: book[k], real: realNames[k] }));
       return { stuck, grep, bytes: t.length, confirmed: out.length, siteBatches: (t.match(/\[ko-contacts\]/g) || []).length, noRealName: out.filter(x => !x.real).length, notSavedReal: out.filter(x => x.real && x.book !== x.real).length, list: out.filter(x => !x.real || x.book !== x.real).slice(0, 80) }; } catch (e) { return e.message; } })(),
+    audit: (() => { try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'contacts-audit.json'), 'utf8')); } catch { return null; } })(),
     site: siteLast.filter(x => x.t === tenantId).map(x => { const k = pre + x.phone; return { at: x.at, ph: x.phone.slice(-4), name: x.name, real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }; }) };
 }
 export function siteNames(tenantId, list) {
@@ -815,6 +816,8 @@ function resaveFromFile(tenantId) {
   console.log(`[wa] tenant ${tenantId}: re-saving ${n} numbers from contacts-resave.txt`);
   queueContacts(tenantId, nums.map(p => ({ phone: p })));
 }
+// (23/11/2026) فحص لمرة وحدة: هل الأسماء يلي البوت حفظها موجودة فعلاً عالواتس (غيث 0991795623 ما بيّن عند صاحب المتجر)
+try { const f1 = path.join(DATA_DIR, 'contacts-audit-2311.flag'); if (!fs.existsSync(f1)) { fs.writeFileSync(f1, '1'); fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit-request.txt'), '1'); } } catch {}
 let auditing = false;
 async function auditContacts(tenantId) {
   const req = path.join(DATA_DIR, 'contacts-audit-request.txt'); if (auditing || Number(tenantId) !== KO_TENANT || !fs.existsSync(req)) return;
@@ -841,7 +844,7 @@ async function auditContactsRun(tenantId, req) {
   const mine = Object.entries(saved).filter(([k]) => k.startsWith(tenantId + ':')).map(([k, v]) => [k.slice(String(tenantId).length + 1), v]);
   const missing = mine.filter(([n]) => !onServer.has(n)).map(([n]) => n);
   const placeholdersOnServer = [...onServer.values()].filter(isPlaceholder).length;
-  const sample = {}; for (const n of ['963968003483', '963935752989', '963932096770', '963995227855']) sample[n] = onServer.has(n) ? onServer.get(n) : null;
+  const sample = {}; for (const n of ['963991795623', '963946444567', '963943527267', '963938398554', '963968943086', '963987331027', '963968003483']) sample[n] = onServer.has(n) ? onServer.get(n) : null;
   const out = { at: new Date().toISOString(), serverContacts: cap.size, pnIndexed: pnIdx, lidIndexed: lidIdx, withLid, withPn, placeholdersOnServer, botSaved: mine.length, botSavedMissingOnServer: missing.length, sample, lidExamples, missing };
   fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit.json'), JSON.stringify(out, null, 1));
   console.log(`[wa] tenant ${tenantId}: audit — WhatsApp has ${cap.size} contacts (pn ${pnIdx}, lid ${lidIdx}); bot saved ${mine.length}, missing on WhatsApp ${missing.length}`);
