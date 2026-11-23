@@ -331,6 +331,8 @@ export async function start(tenantId, { pairPhone = null } = {}) {
             const sent = await sock.sendMessage(jid, { text: '✅ تأكّد رقمك. ارجع لموقع KO SPORT، حسابك جاهز وبتقدر تكمّل طلبك 🛒' }).catch(() => null);
             if (sent?.key?.id && typeof markBotSent === 'function') markBotSent(sent.key.id);
             console.log(`[wa] tenant ${tenantId}: KO account confirmed by WhatsApp for ${phone}`);
+            // (23/11/2026) منخبّر الموقع فوراً لينعمل الحساب (بالاسم يلي كتبو الزبون) حتى لو ما رجع للموقع. كان الحساب يضيع، والرقم يضل «زبون XXXX»
+            { const cm = String(text || '').toUpperCase().match(/KO-([A-Z0-9]{6})\b/); if (cm) setTimeout(() => fetch('https://ko-sport.pages.dev/api/acct/wa-done', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ t: cm[1] }), signal: AbortSignal.timeout(20000) }).then(r => r.json()).then(j => console.log(`[ko-otp] site account for ${phone}: ${JSON.stringify(j).slice(0, 100)}`)).catch(e => console.error('[ko-otp] wa-done', e.message)), 1500); }
             if (hasService(tenantId, 'contacts_new')) saveSoon(tenantId, phone); // الموقع رح يبعت الاسم الحقيقي خلال ثواني
             continue;
           }
