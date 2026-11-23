@@ -331,12 +331,12 @@ export async function start(tenantId, { pairPhone = null } = {}) {
             const sent = await sock.sendMessage(jid, { text: '✅ تأكّد رقمك. ارجع لموقع KO SPORT، حسابك جاهز وبتقدر تكمّل طلبك 🛒' }).catch(() => null);
             if (sent?.key?.id && typeof markBotSent === 'function') markBotSent(sent.key.id);
             console.log(`[wa] tenant ${tenantId}: KO account confirmed by WhatsApp for ${phone}`);
-            if (hasService(tenantId, 'contacts_new')) saveContact(tenantId, phone, '').catch(() => {});
+            if (hasService(tenantId, 'contacts_new')) saveSoon(tenantId, phone); // الموقع رح يبعت الاسم الحقيقي خلال ثواني
             continue;
           }
         }
         // تفاعل (❤️👍) أو رسالة فاضية: البوت ما بيرد عليها، بس الرقم لازم ينحفظ
-        if (!text && !mediaNote) { if (phone && hasService(tenantId, 'contacts_new')) saveContact(tenantId, phone, '').catch(() => {}); continue; }
+        if (!text && !mediaNote) { if (phone && hasService(tenantId, 'contacts_new')) saveSoon(tenantId, phone); continue; }
         // بس الأرقام يلي البوت رح يرد عليها: منعلّمها مقروءة ومنحلّل صوتها وصورها. الباقي بيضل متل ما هو (مو مقروء) لترد إنت
         const mine = !m.key.fromMe && (botWillHandle(tenantId, { jid, phone }) || (await import('../wa-products.js')).productsOwner(tenantId, phone));
         if (mine) sock.readMessages([m.key]).catch(() => {});
@@ -352,10 +352,10 @@ export async function start(tenantId, { pairPhone = null } = {}) {
           if (Number(tenantId) === KO_TENANT) { learnInfo(tenantId, phone, chatInfo(tenantId, phone, text)); rescanChat(tenantId, phone); }
           const now = realNames[key] || '';
           if (now !== before) { keepNames(); console.log(`[wa] tenant ${tenantId}: name for ${phone}: «${now}»`); }
-          if (hasService(tenantId, 'contacts_new')) (now && now !== before ? saveContact(tenantId, phone, now, true) : saveContact(tenantId, phone, '')).catch(() => {});
+          if (hasService(tenantId, 'contacts_new')) { if (now && now !== before) saveContact(tenantId, phone, now, true).catch(() => {}); else saveSoon(tenantId, phone); }
         }
         // إنت يلي بعتت أول (من الموبايل): الرقم لازم ينحفظ كمان
-        if (m.key.fromMe && phone && hasService(tenantId, 'contacts_new')) saveContact(tenantId, phone, '').catch(() => {});
+        if (m.key.fromMe && phone && hasService(tenantId, 'contacts_new')) saveSoon(tenantId, phone);
         console.log(`[wa] tenant ${tenantId}: ${m.key.fromMe ? 'you replied to' : 'message from'} ${phone || jid}: ${(text || mediaNote || '').slice(0, 60).replace(/\n/g, ' ')}`);
         handleInbound(tenantId, { jid, phone, name: m.pushName || null, text, mediaNote, mediaUrl, waId: m.key.id, fromMe: !!m.key.fromMe });
       } catch (e) { console.error('[wa] inbound', e.message); }
@@ -557,7 +557,8 @@ export function contactsDiag(tenantId) {
       for (const n of Object.keys(seen)) { const k = pre + n; out.push({ ph: n.slice(-4), real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }); }
       const ph = Object.keys(seen).filter(n => isPh(tenantId, book[pre + n] || '') && saved[pre + n] && !isPh(tenantId, saved[pre + n])).slice(0, 5);
       const lines = t.split('\n'), grep = {}; for (const n of ph) grep[n.slice(-4)] = lines.filter(l => l.includes(n)).slice(-10).map(l => l.slice(0, 200));
-      return { grep, bytes: t.length, confirmed: out.length, siteBatches: (t.match(/\[ko-contacts\]/g) || []).length, noRealName: out.filter(x => !x.real).length, notSavedReal: out.filter(x => x.real && x.book !== x.real).length, list: out.filter(x => !x.real || x.book !== x.real).slice(0, 80) }; } catch (e) { return e.message; } })(),
+      const stuck = Object.keys(book).filter(k => k.startsWith(pre) && isPh(tenantId, book[k]) && realNames[k] && !isPh(tenantId, realNames[k])).map(k => ({ phone: k.slice(pre.length), book: book[k], real: realNames[k] }));
+      return { stuck, grep, bytes: t.length, confirmed: out.length, siteBatches: (t.match(/\[ko-contacts\]/g) || []).length, noRealName: out.filter(x => !x.real).length, notSavedReal: out.filter(x => x.real && x.book !== x.real).length, list: out.filter(x => !x.real || x.book !== x.real).slice(0, 80) }; } catch (e) { return e.message; } })(),
     site: siteLast.filter(x => x.t === tenantId).map(x => { const k = pre + x.phone; return { at: x.at, ph: x.phone.slice(-4), name: x.name, real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }; }) };
 }
 export function siteNames(tenantId, list) {
@@ -892,6 +893,17 @@ setInterval(async () => {
   restoring = false;
 }, 30_000).unref();
 
+// (23/11/2026) «زباين بيسجّلو بالموقع واسمن ما عم ينحفظ»: الواتس بيقبل أول حفظ لجهة الاتصال بس، وأي تعديل بعدو ما بيثبت عالموبايل
+// (السجل: «زبون 4567» → «بيان ماهر شاكر» انكتب نجاح، بس دفتر العناوين رجع «زبون 4567»). لهيك الرقم الجديد بلا اسم معروف
+// ما بينحفظ «زبون XXXX» فوراً: منستنّى 20 دقيقة يوصل الاسم (من الموقع أو من المحادثة) لينحفظ من أول مرة بالاسم الحقيقي.
+const soon = new Map();
+function saveSoon(tenantId, phone) {
+  const num = String(phone || '').replace(/\D/g, ''); if (num.length < 8) return;
+  const key = tenantId + ':' + num;
+  if (bookName(tenantId, num) || realNames[key]) { saveContact(tenantId, num, '').catch(() => {}); return; }
+  if (soon.has(key) || soon.size > 5000) return;
+  soon.set(key, setTimeout(() => { soon.delete(key); saveContact(tenantId, num, '').catch(() => {}); }, 20 * 60_000));
+}
 export async function saveContact(tenantId, phone, name, force = false) {
   if (frozen()) return false;
   if (!isActive() || !contactsOn(tenantId)) return false;
