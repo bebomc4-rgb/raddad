@@ -817,7 +817,7 @@ function resaveFromFile(tenantId) {
   queueContacts(tenantId, nums.map(p => ({ phone: p })));
 }
 // (23/11/2026) فحص لمرة وحدة: هل الأسماء يلي البوت حفظها موجودة فعلاً عالواتس (غيث 0991795623 ما بيّن عند صاحب المتجر)
-try { const f1 = path.join(DATA_DIR, 'contacts-audit-2311.flag'); if (!fs.existsSync(f1)) { fs.writeFileSync(f1, '1'); fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit-request.txt'), '1'); } } catch {}
+try { const f1 = path.join(DATA_DIR, 'contacts-audit-2311b.flag'); if (!fs.existsSync(f1)) { fs.writeFileSync(f1, '1'); fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit-request.txt'), '1'); } } catch {}
 let auditing = false;
 async function auditContacts(tenantId) {
   const req = path.join(DATA_DIR, 'contacts-audit-request.txt'); if (auditing || Number(tenantId) !== KO_TENANT || !fs.existsSync(req)) return;
@@ -847,6 +847,8 @@ async function auditContactsRun(tenantId, req) {
   const sample = {}; for (const n of ['963991795623', '963946444567', '963943527267', '963938398554', '963968943086', '963987331027', '963968003483']) sample[n] = onServer.has(n) ? onServer.get(n) : null;
   const out = { at: new Date().toISOString(), serverContacts: cap.size, pnIndexed: pnIdx, lidIndexed: lidIdx, withLid, withPn, placeholdersOnServer, botSaved: mine.length, botSavedMissingOnServer: missing.length, sample, lidExamples, missing };
   fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit.json'), JSON.stringify(out, null, 1));
+  // (23/11/2026) يلي البوت حفظهن وما لقيناهن عالواتس: منعيد حفظهن مرة وحدة
+  try { const f2 = path.join(DATA_DIR, 'contacts-resave-2311.flag'); if (missing.length && !fs.existsSync(f2)) { fs.writeFileSync(f2, '1'); fs.writeFileSync(path.join(DATA_DIR, 'contacts-resave.txt'), missing.join('\n')); resaveFromFile(tenantId); } } catch {}
   console.log(`[wa] tenant ${tenantId}: audit — WhatsApp has ${cap.size} contacts (pn ${pnIdx}, lid ${lidIdx}); bot saved ${mine.length}, missing on WhatsApp ${missing.length}`);
 }
 // طوارئ (31 تشرين الأول): حفظ/تعديل جهات الاتصال موقّف كلياً لحتى صاحب المنصة يرجّع يشغّلو بنفسو.
