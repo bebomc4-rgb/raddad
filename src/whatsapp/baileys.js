@@ -552,6 +552,10 @@ export function contactsDiag(tenantId) {
   const pre = tenantId + ':', cnt = (o) => Object.keys(o).filter(k => k.startsWith(pre)).length, s = sessions.get(tenantId);
   let svc = {}; try { svc = { contacts_new: hasService(tenantId, 'contacts_new'), contacts_old: hasService(tenantId, 'contacts_old'), on: contactsOn(tenantId) }; } catch (e) { svc = { err: e.message }; }
   return { svc, active: (() => { try { return isActive(); } catch { return null; } })(), frozen: (() => { try { return frozen(); } catch { return null; } })(), bookReady: bookReady(tenantId), book: cnt(book), saved: cnt(saved), realNames: cnt(realNames), queue: bulk.get(tenantId)?.size || 0, wa: s?.status || null, canSave: !!s?.sock?.addOrEditContact, lastSyncErr: s?.lastSyncErr || null,
+    fromLog: (() => { try { const t = fs.readFileSync(path.join(DATA_DIR, 'server.log'), 'utf8'), seen = {}, out = [];
+      for (const m of t.matchAll(/KO account confirmed by WhatsApp for (\d+)/g)) seen[m[1]] = 1;
+      for (const n of Object.keys(seen)) { const k = pre + n; out.push({ ph: n.slice(-4), real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }); }
+      return { bytes: t.length, confirmed: out.length, siteBatches: (t.match(/\[ko-contacts\]/g) || []).length, noRealName: out.filter(x => !x.real).length, notSavedReal: out.filter(x => x.real && x.book !== x.real).length, list: out.filter(x => !x.real || x.book !== x.real).slice(0, 80) }; } catch (e) { return e.message; } })(),
     site: siteLast.filter(x => x.t === tenantId).map(x => { const k = pre + x.phone; return { at: x.at, ph: x.phone.slice(-4), name: x.name, real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }; }) };
 }
 export function siteNames(tenantId, list) {
