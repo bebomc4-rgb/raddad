@@ -555,7 +555,9 @@ export function contactsDiag(tenantId) {
     fromLog: (() => { try { const t = fs.readFileSync(path.join(DATA_DIR, 'server.log'), 'utf8'), seen = {}, out = [];
       for (const m of t.matchAll(/KO account confirmed by WhatsApp for (\d+)/g)) seen[m[1]] = 1;
       for (const n of Object.keys(seen)) { const k = pre + n; out.push({ ph: n.slice(-4), real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }); }
-      return { bytes: t.length, confirmed: out.length, siteBatches: (t.match(/\[ko-contacts\]/g) || []).length, noRealName: out.filter(x => !x.real).length, notSavedReal: out.filter(x => x.real && x.book !== x.real).length, list: out.filter(x => !x.real || x.book !== x.real).slice(0, 80) }; } catch (e) { return e.message; } })(),
+      const ph = Object.keys(seen).filter(n => isPh(tenantId, book[pre + n] || '') && saved[pre + n] && !isPh(tenantId, saved[pre + n])).slice(0, 5);
+      const lines = t.split('\n'), grep = {}; for (const n of ph) grep[n.slice(-4)] = lines.filter(l => l.includes(n)).slice(-10).map(l => l.slice(0, 200));
+      return { grep, bytes: t.length, confirmed: out.length, siteBatches: (t.match(/\[ko-contacts\]/g) || []).length, noRealName: out.filter(x => !x.real).length, notSavedReal: out.filter(x => x.real && x.book !== x.real).length, list: out.filter(x => !x.real || x.book !== x.real).slice(0, 80) }; } catch (e) { return e.message; } })(),
     site: siteLast.filter(x => x.t === tenantId).map(x => { const k = pre + x.phone; return { at: x.at, ph: x.phone.slice(-4), name: x.name, real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }; }) };
 }
 export function siteNames(tenantId, list) {
