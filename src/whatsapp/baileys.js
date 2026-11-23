@@ -902,6 +902,20 @@ setInterval(async () => {
   restoring = false;
 }, 30_000).unref();
 
+const arCache = new Map();
+async function arName(tenantId, name) {
+  const raw = String(name || '').replace(/[@_#.\d]+/g, ' ').replace(/\s+/g, ' ').trim(); if (!/[A-Za-z]{2,}/.test(raw)) return /[\p{Script=Arabic}]{2,}/u.test(raw) ? raw : '';
+  if (arCache.has(raw)) return arCache.get(raw);
+  let out = '';
+  try {
+    const { chat, resolveAI } = await import('../ai.js');
+    const { text } = await chat(resolveAI(getTenant(tenantId), { prefer: 'smart' }), { system: 'إنت بتحوّل أسماء أشخاص مكتوبة بالحروف الإنكليزية لنفس الاسم بالحروف العربية (متل ما بيكتبو السوري). رجّع الاسم بالعربي بس، بلا أي كلمة تانية. إذا مو اسم شخص رجّع كلمة: لا', messages: [{ role: 'user', content: raw }], json: false, temperature: 0, maxTokens: 40 });
+    const t = String(text || '').replace(/["'«»\n]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (/^[\p{Script=Arabic}\s]{2,40}$/u.test(t) && t !== 'لا') out = t;
+  } catch (e) { console.error('[wa] arName', e.message); }
+  arCache.set(raw, out); if (out) console.log(`[wa] name «${raw}» → «${out}»`);
+  return out;
+}
 // شيل جهة اتصال (بس للأسماء يلي البوت حاططها «زبون XXXX») قبل ما نرجع نحفظها بالاسم الحقيقي
 async function dropContact(sock, num) {
   const jid = num + '@s.whatsapp.net';
@@ -974,7 +988,9 @@ export async function saveContact(tenantId, phone, name, force = false, force2 =
   try { const t = getTenant(tenantId), own = [phoneFromJid(s.sock.user?.id), ...String(t?.settings?.owner_numbers || '').split(/[,،\s]+/), t?.settings?.notify_number].map(x => String(x || '').replace(/\D/g, '')).filter(Boolean); if (own.some(o => o.endsWith(num.slice(-9)) || num.endsWith(o.slice(-9)))) return false; } catch {}
   const key = tenantId + ':' + num, have = bookName(tenantId, num);
   const nm = String(realNames[key] || (force ? name : '') || '').replace(/[\u200e\u200f]/g, '').trim();
-  const real = /[\p{L}]{2,}/u.test(nm) ? nm.slice(0, 60) : '';
+  let real = /[\p{L}]{2,}/u.test(nm) ? nm.slice(0, 60) : '';
+  // (23/11/2026، صاحب المتجر) ما منحفظ اسم بالإنكليزي ولا «@abdallah»: منحوّلو لعربي، وإذا ما زبط منحفظ «زبون XXXX»
+  if (real && /[A-Za-z@_]/.test(real)) { const ar = await arName(tenantId, real); if (ar) { real = ar; realNames[key] = ar; keepNames(); } else real = ''; }
   if (have) {
     // محفوظ عندك باسم: ما منغيّرو أبداً. بس إذا الاسم «زبون XXXX» ومنعرف الاسم الحقيقي، منبدّلو
     if (have === real || (real && have.startsWith(real + ' ') && /^\d{4,}$/.test(have.slice(real.length + 1)))) return true;
@@ -1304,3 +1320,18 @@ setInterval(async () => {
     console.log('[wa] sent the follow-up message to 201012379611');
   } catch (e) { console.error('[wa] follow-up 201012379611', e.message); }
 }, 45_000).unref();
+
+// (23/11/2026) مرة وحدة: الأسماء الإنكليزية (أو «@…») يلي البوت حفظها ← بالعربي؛ وغيث 963991795623 منعيد حفظو (ما بيّن عند صاحب المتجر)
+setInterval(async () => {
+  try {
+    const f = path.join(DATA_DIR, 'contacts-latin-2311.done'); if (fs.existsSync(f) || frozen() || !isActive()) return;
+    const tid = KO_TENANT, s = sessions.get(tid); if (!s?.sock?.addOrEditContact || s.status !== 'open' || !bookReady(tid)) return;
+    fs.writeFileSync(f, new Date().toISOString());
+    const pre = tid + ':', list = Object.keys(book).filter(k => k.startsWith(pre) && /[A-Za-z@]/.test(book[k] || '') && saved[k] && book[k] === saved[k]);
+    console.log(`[wa] tenant ${tid}: ${list.length} bot-saved names in English → Arabic`);
+    let ok = 0;
+    for (const k of list) { const num = k.slice(pre.length), ar = await arName(tid, book[k]); if (!ar) continue; realNames[k] = ar; if (await saveContact(tid, num, ar, true, true)) ok++; await new Promise(r => setTimeout(r, 3000)); }
+    keepNames(); console.log(`[wa] tenant ${tid}: ${ok}/${list.length} names now in Arabic`);
+    const g = pre + '963991795623'; if (realNames[g]) { await saveContact(tid, '963991795623', realNames[g], true, true); console.log('[wa] re-saved 963991795623'); }
+  } catch (e) { console.error('[wa] latin names', e.message); }
+}, 70_000).unref();
