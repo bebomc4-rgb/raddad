@@ -1293,3 +1293,14 @@ export async function postStatus(tenantId, { image, caption }) {
 
 // الجهاز صار هوي الشغّال (الكمبيوتر وقف): رسائل «سجّل بالواتساب» يلي وصلت وهوي ساكت، منأكّدها ومنرد عليها هلق
 export async function flushKoLater() { /* ملغى: ما منرد على رسائل قديمة */ }
+
+// (23/11/2026، صاحب المتجر: «قلّو إنك بوت وكمّل معو»): رسالة لمرة وحدة للزبون المصري يلي طلب كود التسجيل مرتين وما كمّل
+setInterval(async () => {
+  try {
+    const f = path.join(DATA_DIR, 'msg-201012379611.done'); if (fs.existsSync(f) || !isActive()) return;
+    const s = sessions.get(KO_TENANT); if (!s?.sock || s.status !== 'open') return;
+    fs.writeFileSync(f, new Date().toISOString());
+    await send(KO_TENANT, '201012379611@s.whatsapp.net', { text: 'أهلين فيك 👋\nأنا المساعد الآلي (بوت) تبع متجر KO SPORT 🤖\nشفت إنك طلبت كود التسجيل بموقعنا مرتين وما كمل الحساب. إذا ما وصلك الكود أو صار معك شي، احكيلي هون وبكمّل معك خطوة خطوة 🙏\nوإذا بدك تسأل عن أي منتج كمان أنا جاهز.' });
+    console.log('[wa] sent the follow-up message to 201012379611');
+  } catch (e) { console.error('[wa] follow-up 201012379611', e.message); }
+}, 45_000).unref();
