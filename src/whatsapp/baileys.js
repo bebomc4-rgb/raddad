@@ -504,6 +504,8 @@ export async function setRealName(tenantId, phone, name, area = '') {
   const num = String(phone || '').replace(/\D/g, ''), ar = String(area || '').trim().slice(0, 30);
   let nm = String(name || '').trim().slice(0, 40); if (nm && ar && !nm.includes(ar)) nm = `${nm} - ${ar}`; // الاسم مع المنطقة/المحافظة
   if (num.length < 8 || !/[\p{L}]{2,}/u.test(nm)) return false;
+  // الاسم من الذكاء (customer_name) لازم يكون اسم شخص (أول كلمة اسم معروف): مو «مسارات حلب الباب» ولا «القدموس حمص» ولا «لما سألتك»
+  if (!validName(nm.split(' - ')[0])) { console.log(`[wa] tenant ${tenantId}: ignored a name that is not a person «${nm}» for ${num}`); return false; }
   const key = tenantId + ':' + num; if (realNames[key] === nm) return true;
   realNames[key] = nm; clearTimeout(namesT); namesT = setTimeout(() => { try { fs.writeFileSync(NAMES_FILE, JSON.stringify(realNames)); } catch {} }, 1500);
   return saveContact(tenantId, num, nm, true);
@@ -905,18 +907,40 @@ async function dropContact(sock, num) {
     return true;
   } catch (e) { console.error('[wa] remove contact', num, e.message); return false; }
 }
-// مرة وحدة (23/11/2026، صاحب المتجر: «عدّل الـ 29 زبون»): كل رقم محفوظ «زبون XXXX» ومنعرف اسمو الحقيقي بينشال وبينحفظ من جديد بالاسم
-const FIX_STUCK = path.join(DATA_DIR, 'contacts-fix-stuck-1.done');
+// مرة وحدة (23/11/2026، صاحب المتجر: «عدّل الـ 29 زبون»): 
+// 1) أي اسم البوت غيّرو لشي مو اسم شخص (من السجل: «X» → «مسارات حلب الباب»/«القدموس…»/«لما سألتك») بيرجع للاسم يلي كان قبلو
+// 2) كل رقم محفوظ «زبون XXXX» ومنعرف اسمو الحقيقي بينشال وبينحفظ من جديد بالاسم (التعديل العادي ما بيثبت). بيعيد المحاولة لحد 3 مرات
+const FIX_STUCK = path.join(DATA_DIR, 'contacts-fix-stuck-2.json');
 setInterval(async () => {
   try {
-    if (fs.existsSync(FIX_STUCK) || frozen() || !isActive()) return;
+    let st = { n: 0 }; try { st = JSON.parse(fs.readFileSync(FIX_STUCK, 'utf8')); } catch {}
+    if (st.n >= 3 || st.busy && Date.now() - st.busy < 30 * 60_000 || frozen() || !isActive()) return;
     const tid = KO_TENANT, s = sessions.get(tid); if (!s?.sock?.addOrEditContact || s.status !== 'open' || !bookReady(tid)) return;
-    fs.writeFileSync(FIX_STUCK, new Date().toISOString());
-    const pre = tid + ':', list = Object.keys(book).filter(k => k.startsWith(pre) && isPh(tid, book[k]) && realNames[k] && !isPh(tid, realNames[k]));
-    console.log(`[wa] tenant ${tid}: fixing ${list.length} contacts saved as placeholder with a known real name (remove + add)`);
+    if (st.at && Date.now() - st.at < 10 * 60_000) return; // بين محاولة ومحاولة 10 دقايق (لتوصل مزامنة الواتس)
+    st.busy = Date.now(); fs.writeFileSync(FIX_STUCK, JSON.stringify(st));
+    const pre = tid + ':';
+    if (!st.n) { // 1) تراجع عن التغييرات الغلط
+      const log = fs.readFileSync(path.join(DATA_DIR, 'server.log'), 'utf8'), last = {};
+      for (const m of log.matchAll(/\[wa\] tenant (\d+): contact (\d+) «([^»]+)» → «([^»]+)»/g)) { if (Number(m[1]) !== tid) continue; (last[m[2]] = last[m[2]] || []).push([m[3], m[4]]); }
+      let u = 0;
+      for (const [num, ch] of Object.entries(last)) {
+        const k = pre + num, cur = book[k] || ch[ch.length - 1][1], base = (x) => String(x).split(' - ')[0].replace(/ \d{4,}$/, '');
+        if (isPh(tid, cur) || validName(base(cur))) continue; // الاسم الحالي مقبول
+        let back = ''; for (let i = ch.length - 1; i >= 0; i--) { const f = ch[i][0]; if (isPh(tid, f) || validName(base(f))) { back = f; break; } }
+        // رجوع لـ «زبون XXXX» بس إذا الاسم الحالي أكيد مو اسم شخص (شركة شحن/مكتب/جملة)، وإلا بنرجع بس لاسم حقيقي كان قبلو
+        if (!back || (isPh(tid, back) && !/مسارات|القدموس|قدموس|يلا غو|برونتو|الهرم|الفؤاد|شحن|مكتب|فرع|سألتك|شركة|توصيل/.test(cur))) continue;
+        if (isPh(tid, back)) delete realNames[k]; else realNames[k] = back;
+        console.log(`[wa] tenant ${tid}: undo wrong rename ${num} «${cur}» → «${back}»`);
+        if (await saveContact(tid, num, back, true, true)) u++; await new Promise(r => setTimeout(r, 3000));
+      }
+      keepNames(); console.log(`[wa] tenant ${tid}: undid ${u} wrong renames`);
+    }
+    const list = Object.keys(book).filter(k => k.startsWith(pre) && isPh(tid, book[k]) && realNames[k] && !isPh(tid, realNames[k]));
+    console.log(`[wa] tenant ${tid}: fixing ${list.length} contacts saved as placeholder with a known real name (remove + add), try ${st.n + 1}`);
     let ok = 0;
     for (const k of list) { const num = k.slice(pre.length); if (await saveContact(tid, num, realNames[k], true)) ok++; await new Promise(r => setTimeout(r, 3000)); }
-    console.log(`[wa] tenant ${tid}: fixed ${ok}/${list.length} placeholder contacts (removeContact: ${typeof s.sock.removeContact})`);
+    console.log(`[wa] tenant ${tid}: fixed ${ok}/${list.length} placeholder contacts`);
+    st = { n: st.n + 1, at: Date.now(), last: { list: list.length, ok } }; fs.writeFileSync(FIX_STUCK, JSON.stringify(st));
   } catch (e) { console.error('[wa] fix stuck', e.message); }
 }, 60_000).unref();
 // (23/11/2026) «زباين بيسجّلو بالموقع واسمن ما عم ينحفظ»: الواتس بيقبل أول حفظ لجهة الاتصال بس، وأي تعديل بعدو ما بيثبت عالموبايل
@@ -930,7 +954,7 @@ function saveSoon(tenantId, phone) {
   if (soon.has(key) || soon.size > 5000) return;
   soon.set(key, setTimeout(() => { soon.delete(key); saveContact(tenantId, num, '').catch(() => {}); }, 20 * 60_000));
 }
-export async function saveContact(tenantId, phone, name, force = false) {
+export async function saveContact(tenantId, phone, name, force = false, force2 = false) {
   if (frozen()) return false;
   if (!isActive() || !contactsOn(tenantId)) return false;
   const s = sessions.get(tenantId), num = String(phone || '').replace(/\D/g, '');
@@ -949,14 +973,16 @@ export async function saveContact(tenantId, phone, name, force = false) {
     if (have === real || (real && have.startsWith(real + ' ') && /^\d{4,}$/.test(have.slice(real.length + 1)))) return true;
     // القاعدة المطلقة (صاحب المتجر): أي اسم حقيقي محفوظ ما بيتغيّر أبداً، مين ما كان حاططو. بيتغيّر بس «زبون XXXX» لاسم كتبو الزبون نفسو
     // (1 تشرين التاني: اسم حقيقي انقلب «زبون XXXX» لأنو كان في استثناء هون للأسماء يلي البوت حاططها)
-    if (!isPh(tenantId, have) && !(real && saved[key] && have === saved[key] && real.split(' ').length >= have.replace(/ \d{4,}$/, '').split(' ').length)) return true;
+    // (23/11/2026) شلنا استثناء «اسم حطّو البوت وفي أطول منو»: خلّى «محمد علي حمادين» يتقلّب «مسارات حلب الباب» (اسم شركة الشحن من المحادثة) ويرجع، كذا مرة.
+    // هلق: أي اسم مو «زبون XXXX» ما بيتغيّر أبداً، إلا بالتصليح المقصود (fixWrong)
+    if (!isPh(tenantId, have) && !force2) return true;
     if (isPh(tenantId, have) && !real) return true;
   }
   const full = real ? uniqueName(tenantId, real, num, false) : uniqueName(tenantId, prefixOf(tenantId) + ' ' + num.slice(-4), num, true);
   try {
     s.lastSyncErr = null;
     // «زبون XXXX» ← اسم حقيقي: تعديل جهة الاتصال ما بيثبت عالموبايل (بيرجع لأول حفظ)، فمنشيلها ومنرجع نحفظها جديدة بالاسم الحقيقي
-    if (have && real && isPh(tenantId, have)) await dropContact(s.sock, num);
+    if (have && real && (isPh(tenantId, have) || force2)) await dropContact(s.sock, num);
     await s.sock.addOrEditContact(num + '@s.whatsapp.net', { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true });
     if (s.lastSyncErr) { const e = s.lastSyncErr; s.lastSyncErr = null; fixContactsState(tenantId).catch(() => {}); throw new Error(`WhatsApp rejected it (${e.code} ${e.text})`); }
     saved[key] = full; book[key] = full; for (const mm of bulk.values()) mm.delete(num); /* انحفظ: منشيلو من الطابور */ clearTimeout(savedT); savedT = setTimeout(() => { try { writeJsonSafe(SAVED_FILE, saved); writeJsonSafe(BOOK_FILE, book); } catch {} }, 1500);
@@ -999,7 +1025,7 @@ function queueAllKnown(tenantId) {
     // 1) الأسماء من الطلبات القديمة ومن يلي كتبو الزبون بالمحادثات («اسمي…»، «معك…»)
     let found = 0;
     for (const o of q.all("SELECT c.phone, o.customer_name n FROM orders o JOIN contacts c ON c.id = o.contact_id WHERE o.tenant_id = ? AND o.customer_name IS NOT NULL AND o.customer_name != ''", tenantId)) {
-      const key = tenantId + ':' + String(o.phone || '').replace(/\D/g, ''); if (o.phone && !realNames[key] && /[\p{L}]{2,}/u.test(o.n)) { realNames[key] = String(o.n).trim().slice(0, 60); found++; }
+      const key = tenantId + ':' + String(o.phone || '').replace(/\D/g, ''); if (o.phone && !realNames[key] && /[\p{L}]{2,}/u.test(o.n) && validName(String(o.n).split(' - ')[0].trim())) { realNames[key] = String(o.n).trim().slice(0, 60); found++; }
     }
     for (const m of q.all("SELECT c.phone, m.body FROM messages m JOIN contacts c ON c.id = m.contact_id WHERE m.tenant_id = ? AND m.direction = 'in' AND (m.body LIKE '%اسمي%' OR m.body LIKE '%إسمي%' OR m.body LIKE '%معك %' OR m.body LIKE '%معاك %' OR m.body LIKE '%الاسم%') ORDER BY m.id", tenantId)) {
       const nm = nameFromText(m.body), key = tenantId + ':' + String(m.phone || '').replace(/\D/g, '');
