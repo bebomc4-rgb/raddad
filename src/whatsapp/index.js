@@ -2,10 +2,10 @@
 import * as qr from './baileys.js';
 import * as cloud from './cloud.js';
 
-export async function sendToCustomer(tenant, jid, { text, image, audio }) {
+export async function sendToCustomer(tenant, jid, { text, image, audio, document, fileName, mimetype }) {
   if (tenant.wa_provider === 'sim') return { id: 'sim-' + Math.random().toString(36).slice(2) }; // وضع الاختبار
-  if (tenant.wa_provider === 'cloud') return cloud.send(tenant, jid, { text, image });
-  return qr.send(tenant.id, jid, { text, image, audio });
+  if (tenant.wa_provider === 'cloud') return cloud.send(tenant, jid, { text: document ? [text, document].filter(Boolean).join('\n') : text, image }); // الربط الرسمي: الملف كرابط
+  return qr.send(tenant.id, jid, { text, image, audio, document, fileName, mimetype });
 }
 
 export async function typing(tenant, jid) {

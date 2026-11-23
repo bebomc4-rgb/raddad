@@ -24,6 +24,19 @@ export async function sendFromPlatform(phone, text) {
     return true;
   } catch (e) { console.error('[notify] send to', n, e.message); return false; }
 }
+// ملف (PDF) من رقم المنصة: برنامج التمرين من «اعمل برنامجك» بموقع KO SPORT. إذا الملف ما زبط، بيوصل النص مع الرابط
+export async function sendDocFromPlatform(phone, url, fileName, caption) {
+  const t = platformTenant(), n = intl(phone);
+  if (!t || n.length < 9 || !isActive()) return false;
+  try {
+    const { sendToCustomer } = await import('./whatsapp/index.js');
+    await sendToCustomer(t, `${n}@s.whatsapp.net`, { document: url, fileName, mimetype: 'application/pdf', text: caption });
+    return true;
+  } catch (e) {
+    console.error('[notify] doc to', n, e.message);
+    return sendFromPlatform(n, [caption, url].filter(Boolean).join('\n'));
+  }
+}
 // زر «نسخ الكود» (تجربة): بيرجع false إذا ما زبط
 export async function sendCopyFromPlatform(phone, text, code) {
   const t = platformTenant(), n = intl(phone);

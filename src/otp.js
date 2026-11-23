@@ -2,7 +2,7 @@
 // ما في أي مفتاح سري مشترك: الموقع بيوقّع الطلب بمفتاحه الخاص، ونحنا منتحقق بالمفتاح العام يلي بينشره الموقع نفسه.
 import crypto from 'node:crypto';
 import { getSetting } from './db.js';
-import { sendFromPlatform, sendCopyFromPlatform, intl } from './notify.js';
+import { sendFromPlatform, sendCopyFromPlatform, sendDocFromPlatform, intl } from './notify.js';
 import { rateLimit } from './security.js';
 import { HttpError } from './http.js';
 
@@ -61,6 +61,18 @@ export async function koNotify(body) {
   need(allowed.includes(n), 403, 'الرقم مو مسموح');
   const ok = await sendFromPlatform(n, text);
   console.log(`[ko-notify] order message to ${n}: ${ok ? 'sent' : 'NOT sent'}`);
+  return { ok };
+}
+// ملف PDF برنامج التمرين («اعمل برنامجك» بموقع KO SPORT، 23/11/2026): الموقع بيبعت رقم الزبون (من حسابو المتأكد) ورابط الملف موقّعين،
+// والمجيب بيبعت الملف كملف PDF عالواتساب. الرابط لازم يكون من موقع KO SPORT نفسو (/api/exlib/pdf/…).
+export async function koPdf(body) {
+  const { to, url, ts, nonce, sig } = body || {};
+  const n = intl(to || '');
+  need(n.length >= 9 && /^https:\/\/(ko-sport\.online|ko-sport\.pages\.dev)\/api\/exlib\/pdf\/[a-f0-9]{24}\/[\w.-]+\.pdf$/.test(url || ''), 400, 'ناقص'); fresh(ts, nonce);
+  need(await verify(`pdf|${n}|${url}|${ts}|${nonce}`, sig), 403, 'توقيع غلط');
+  seen.set(nonce, Date.now());
+  const ok = await sendDocFromPlatform(n, url, 'برنامجي-KO-SPORT.pdf', '📄 برنامجك التدريبي من KO SPORT 💪\nاكبس عالملف لتفتحو أو تحفظو.');
+  console.log(`[ko-pdf] program pdf to ${n}: ${ok ? 'sent' : 'NOT sent'}`);
   return { ok };
 }
 // أسماء زباين الموقع (حساب جديد، أو كل الحسابات مرة وحدة): الموقع بيبعتها موقّعة، والمجيب بيحفظ الرقم باسمو بدل «زبون XXXX»

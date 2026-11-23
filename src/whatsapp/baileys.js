@@ -962,15 +962,17 @@ function queueAllKnown(tenantId) {
   } catch (e) { console.error('[wa] queue contacts', e.message); }
 }
 
-export async function send(tenantId, jid, { text, image, audio }) {
+export async function send(tenantId, jid, { text, image, audio, document, fileName, mimetype }) {
   const s = sessions.get(tenantId);
   if (!s?.sock || s.status !== 'open') throw new Error('واتساب مو مربوط حالياً');
-  const content = audio ? { audio: mediaSource(audio), mimetype: 'audio/ogg; codecs=opus', ptt: true } : image ? { image: mediaSource(image), caption: text || undefined } : { text };
+  // document: ملف (متل PDF برنامج التمرين من موقع KO SPORT)، بينبعت كملف بينزل عند الزبون
+  const content = document ? { document: mediaSource(document), mimetype: mimetype || 'application/pdf', fileName: fileName || 'file.pdf', caption: text || undefined }
+    : audio ? { audio: mediaSource(audio), mimetype: 'audio/ogg; codecs=opus', ptt: true } : image ? { image: mediaSource(image), caption: text || undefined } : { text };
   try {
     const r = await s.sock.sendMessage(jid, content);
     return { id: r?.key?.id };
   } catch (e) {
-    if ((image || audio) && text) { // إذا الصورة أو الصوت فشل، منبعت النص لحاله
+    if ((image || audio || document) && text) { // إذا الصورة أو الصوت أو الملف فشل، منبعت النص لحاله
       const r = await s.sock.sendMessage(jid, { text });
       return { id: r?.key?.id };
     }
