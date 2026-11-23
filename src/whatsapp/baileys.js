@@ -893,6 +893,32 @@ setInterval(async () => {
   restoring = false;
 }, 30_000).unref();
 
+// شيل جهة اتصال (بس للأسماء يلي البوت حاططها «زبون XXXX») قبل ما نرجع نحفظها بالاسم الحقيقي
+async function dropContact(sock, num) {
+  const jid = num + '@s.whatsapp.net';
+  try {
+    if (typeof sock.removeContact === 'function') await sock.removeContact(jid);
+    else if (typeof sock.chatModify === 'function') await sock.chatModify({ contact: null }, jid);
+    else return false;
+    console.log(`[wa] contact ${num}: removed the placeholder before saving the real name`);
+    await new Promise(r => setTimeout(r, 4000));
+    return true;
+  } catch (e) { console.error('[wa] remove contact', num, e.message); return false; }
+}
+// مرة وحدة (23/11/2026، صاحب المتجر: «عدّل الـ 29 زبون»): كل رقم محفوظ «زبون XXXX» ومنعرف اسمو الحقيقي بينشال وبينحفظ من جديد بالاسم
+const FIX_STUCK = path.join(DATA_DIR, 'contacts-fix-stuck-1.done');
+setInterval(async () => {
+  try {
+    if (fs.existsSync(FIX_STUCK) || frozen() || !isActive()) return;
+    const tid = KO_TENANT, s = sessions.get(tid); if (!s?.sock?.addOrEditContact || s.status !== 'open' || !bookReady(tid)) return;
+    fs.writeFileSync(FIX_STUCK, new Date().toISOString());
+    const pre = tid + ':', list = Object.keys(book).filter(k => k.startsWith(pre) && isPh(tid, book[k]) && realNames[k] && !isPh(tid, realNames[k]));
+    console.log(`[wa] tenant ${tid}: fixing ${list.length} contacts saved as placeholder with a known real name (remove + add)`);
+    let ok = 0;
+    for (const k of list) { const num = k.slice(pre.length); if (await saveContact(tid, num, realNames[k], true)) ok++; await new Promise(r => setTimeout(r, 3000)); }
+    console.log(`[wa] tenant ${tid}: fixed ${ok}/${list.length} placeholder contacts (removeContact: ${typeof s.sock.removeContact})`);
+  } catch (e) { console.error('[wa] fix stuck', e.message); }
+}, 60_000).unref();
 // (23/11/2026) «زباين بيسجّلو بالموقع واسمن ما عم ينحفظ»: الواتس بيقبل أول حفظ لجهة الاتصال بس، وأي تعديل بعدو ما بيثبت عالموبايل
 // (السجل: «زبون 4567» → «بيان ماهر شاكر» انكتب نجاح، بس دفتر العناوين رجع «زبون 4567»). لهيك الرقم الجديد بلا اسم معروف
 // ما بينحفظ «زبون XXXX» فوراً: منستنّى 20 دقيقة يوصل الاسم (من الموقع أو من المحادثة) لينحفظ من أول مرة بالاسم الحقيقي.
@@ -929,6 +955,8 @@ export async function saveContact(tenantId, phone, name, force = false) {
   const full = real ? uniqueName(tenantId, real, num, false) : uniqueName(tenantId, prefixOf(tenantId) + ' ' + num.slice(-4), num, true);
   try {
     s.lastSyncErr = null;
+    // «زبون XXXX» ← اسم حقيقي: تعديل جهة الاتصال ما بيثبت عالموبايل (بيرجع لأول حفظ)، فمنشيلها ومنرجع نحفظها جديدة بالاسم الحقيقي
+    if (have && real && isPh(tenantId, have)) await dropContact(s.sock, num);
     await s.sock.addOrEditContact(num + '@s.whatsapp.net', { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true });
     if (s.lastSyncErr) { const e = s.lastSyncErr; s.lastSyncErr = null; fixContactsState(tenantId).catch(() => {}); throw new Error(`WhatsApp rejected it (${e.code} ${e.text})`); }
     saved[key] = full; book[key] = full; for (const mm of bulk.values()) mm.delete(num); /* انحفظ: منشيلو من الطابور */ clearTimeout(savedT); savedT = setTimeout(() => { try { writeJsonSafe(SAVED_FILE, saved); writeJsonSafe(BOOK_FILE, book); } catch {} }, 1500);
