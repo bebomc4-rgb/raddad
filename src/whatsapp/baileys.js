@@ -873,7 +873,9 @@ const PROBE = ['963991795623', '963965374561', '201012379611', '963987331027', '
 const QUEUE_FILE = path.join(DATA_DIR, 'contacts-queue.json');
 const LIDS_BOOK_FILE = path.join(DATA_DIR, 'wa-addressbook-lid.json');
 let cq = {}; for (const f of [QUEUE_FILE, QUEUE_FILE + '.prev']) { try { const o = JSON.parse(fs.readFileSync(f, 'utf8')); if (o && typeof o === 'object') { cq = o; break; } } catch {} }
-let blid = readJsonSafe(LIDS_BOOK_FILE); // «مشترك:رقم» → true إذا آخر نسخة لجهة الاتصال رفعها الموبايل (معها lid)
+let blid = readJsonSafe(LIDS_BOOK_FILE);
+const LOST_FILE = path.join(DATA_DIR, 'contacts-lost.json');
+let lost = readJsonSafe(LOST_FILE); const tried = {}; // tried: الاسم يلي عم نحاول نحطّو هلق (إذا الواتس رفضو، ما بيصير «اسم إنت حاطّو») // «مشترك:رقم» → { n: آخر اسم كان محفوظ، b: 1 إذا البوت حطّو } — رقم اختفى من الواتس: بيرجع بنفس الاسم، ما بيتغيّر // «مشترك:رقم» → true إذا آخر نسخة لجهة الاتصال رفعها الموبايل (معها lid)
 let cqT = null, blidT = null;
 function keepQueue() { clearTimeout(cqT); cqT = setTimeout(() => { try { const t = JSON.stringify(cq); fs.writeFileSync(QUEUE_FILE + '.tmp', t); try { fs.copyFileSync(QUEUE_FILE, QUEUE_FILE + '.prev'); } catch {} fs.renameSync(QUEUE_FILE + '.tmp', QUEUE_FILE); } catch (e) { console.error('[wa] contacts queue file', e.message); } }, 1000); }
 function keepBlid() { clearTimeout(blidT); blidT = setTimeout(() => { try { writeJsonSafe(LIDS_BOOK_FILE, blid); } catch {} }, 3000); }
@@ -971,11 +973,12 @@ async function saveCore(tid, num, it) {
   if (!s?.sock?.addOrEditContact || s.status !== 'open') return 'wait';
   if (isOwnerNum(tid, num)) return 'skip';
   const key = tid + ':' + num, have = bookName(tid, num), force2 = it.f === 2;
+  if (it.r && have && verdict(tid, num, have, !!blid[key], isChatNum(tid, num)) === 'ok') return 'skip'; // الموبايل أكّدو بالنص: ما في داعي نعيد
   let real = String(realNames[key] || (it.f ? it.n : '') || '').replace(/[‎‏]/g, '').trim();
   real = /[\p{L}]{2,}/u.test(real) ? real.slice(0, 60) : '';
   if (real && /[A-Za-z@_]/.test(real)) { const ar = await arName(tid, real); if (ar) { real = ar; realNames[key] = ar; keepNames(); } else real = ''; }
   const sameReal = (x) => !!real && (x === real || (x.startsWith(real + ' ') && /^\d{4,}$/.test(x.slice(real.length + 1))));
-  let full;
+  let full, ownerName = false;
   const botOwned = !!have && (saved[key] === have || isPh(tid, have)); // جهة الاتصال حطّها البوت (مو إنت)
   if (have && !isPh(tid, have) && botOwned && /[A-Za-z@_]/.test(have)) { // اسم إنكليزي حطّو البوت: منحوّلو للعربي
     if (!real) { const ar = await arName(tid, realNames[key] && /[A-Za-z]/.test(realNames[key]) ? realNames[key] : have); if (ar) real = ar; }
@@ -990,18 +993,24 @@ async function saveCore(tid, num, it) {
     if (real) full = sameReal(have) ? have : uniqueName(tid, real, num, false);
     else if (it.r) full = have;
     else return 'skip';
-  } else full = real ? uniqueName(tid, real, num, false) : uniqueName(tid, prefixOf(tid) + ' ' + num.slice(-4), num, true);
+  } else if (lost[key]?.n && !(lost[key].b && real)) { full = lost[key].n; ownerName = !lost[key].b; } // كان محفوظ واختفى: بيرجع بنفس اسمو بالظبط
+  else full = real ? uniqueName(tid, real, num, false) : uniqueName(tid, prefixOf(tid) + ' ' + num.slice(-4), num, true);
   if (full === have && !it.r) return 'skip';
   const jid = num + '@s.whatsapp.net';
   // تعديل ما ثبت 3 مرات، أو جهة اتصال حطّها البوت والموبايل ما أكّدها بعد مرة: منشيلها ومنرجع نحفظها جديدة (الموبايل بيعاملها جديدة)
   if (have && ((full !== have && (it.t || 0) >= 3) || (full === have && botOwned && (it.t || 0) >= 1))) {
     try { await contactPatch(tid, (sock) => sock.removeContact(jid), 'remove ' + num); console.log(`[wa] tenant ${tid}: contact ${num} «${have}» removed to save it again`); await sleep(3000); } catch (e) { console.error(`[wa] tenant ${tid}: remove contact ${num}`, e.message); }
   }
-  await contactPatch(tid, (sock) => sock.addOrEditContact(jid, { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true }), 'save ' + num);
-  saved[key] = full; book[key] = full; blid[key] = false; keepBook(); keepBlid();
+  tried[key] = full;
+  try { await contactPatch(tid, (sock) => sock.addOrEditContact(jid, { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true }), 'save ' + num); }
+  finally { delete tried[key]; }
+  if (ownerName) delete saved[key]; else saved[key] = full; // اسم إنت حاطّو (رجّعناه): ما بيصير «تبع البوت»، فما منشيلو ولا منغيّرو أبداً
+  book[key] = full; blid[key] = false; keepBook(); keepBlid();
   console.log(`[wa] tenant ${tid}: contact ${num} ${have ? `«${have}» → ` : 'new → '}«${full}»${it.r ? ' (again: your phone had not confirmed it)' : ''}`);
   return 'sent';
 }
+// قديش منستنّى تأكيد الموبايل قبل ما نعيد: 10 دقايق، وبعدين 20، 40… (لحد ساعتين) — الموبايل ممكن يكون مسكّر
+const confirmWait = (it) => Math.min(2 * 3600_000, 10 * 60_000 * 2 ** Math.max(0, (it.t || 1) - 1));
 function judge(tid, k, it, v, now) {
   if (v === 'ok') { delete cq[k]; return 'ok'; }
   if (v === 'nolid' && (it.t || 0) >= 4) {
@@ -1014,7 +1023,7 @@ function judge(tid, k, it, v, now) {
 // تأكيد مباشر (كل دقيقة): من الأحداث يلي بتوصل من الواتس لما الموبايل يرفع جهة الاتصال
 function verifyLive(tid) {
   const pre = tid + ':', now = Date.now(); let ch = 0;
-  for (const [k, it] of Object.entries(cq)) { if (!k.startsWith(pre) || !it.s || now - it.s < 10 * 60_000) continue; judge(tid, k, it, verdict(tid, k.slice(pre.length), book[k] || '', !!blid[k], isChatNum(tid, k.slice(pre.length))), now); ch++; }
+  for (const [k, it] of Object.entries(cq)) { if (!k.startsWith(pre) || !it.s || now - it.s < confirmWait(it)) continue; judge(tid, k, it, verdict(tid, k.slice(pre.length), book[k] || '', !!blid[k], isChatNum(tid, k.slice(pre.length))), now); ch++; }
   if (ch) keepQueue();
 }
 // سحب كل جهات الاتصال من الواتس (من الصفر): بيصلّح نسخة البوت، وبيتأكد إنو كل رقم محفوظ فعلاً
@@ -1027,16 +1036,29 @@ async function pullContacts(tid, why) {
   try {
     const keys = s.sock.authState.keys, tx = typeof keys.transaction === 'function' ? (w) => keys.transaction(w, s.sock.authState.creds?.me?.id || 'resync-app-state') : (w) => w();
     await within(tx(async () => { await keys.set({ 'app-state-sync-version': { critical_unblock_low: null } }); await s.sock.resyncAppState(['critical_unblock_low'], true); }), 150_000, 'contacts sync');
-    await sleep(4000);
+    // Baileys بيبعت جهات الاتصال دفعة وحدة بس يخلص أي شغل تاني عم يصير بنفس اللحظة (لحد 30 ثانية): منستنّاها
+    const busy = () => { try { return typeof s.sock.ev.isBuffering === 'function' && s.sock.ev.isBuffering(); } catch { return false; } };
+    for (let i = 0; i < 160 && (cap.size === 0 || busy()); i++) await sleep(250);
+    await sleep(1000);
   } catch (e) { console.error(`[wa] tenant ${tid}: pulling contacts from WhatsApp failed (${e.message})`); return false; }
   finally { s.sock.ev.off('contacts.upsert', h); }
   const pre = tid + ':', now = Date.now(), n0 = Object.keys(book).filter(k => k.startsWith(pre)).length;
   if (cap.size < 20 && n0 > 100) { console.error(`[wa] tenant ${tid}: pull got only ${cap.size} contacts (have ${n0}) — ignored`); return false; }
+  // نقص كبير فجأة (أكتر من 1% أو 50 رقم): ما منصدّقو إلا إذا تكرّر بالسحب الجاي، لحتى ما نكتب فوق اسم محفوظ عندك
+  const goneKeys = Object.keys(book).filter(k => k.startsWith(pre) && !cap.get(k.slice(pre.length))?.n);
+  if (goneKeys.length > Math.max(50, n0 * 0.01)) {
+    const pv = s.bigDrop;
+    if (!pv || Math.abs(pv.size - cap.size) > Math.max(20, cap.size * 0.002)) { s.bigDrop = { size: cap.size }; s.pullTry = Date.now() - 50_000; console.error(`[wa] tenant ${tid}: pull is missing ${goneKeys.length} contacts we had (${cap.size} of ${n0}) — pulling again before trusting it`); return false; }
+    console.log(`[wa] tenant ${tid}: ${goneKeys.length} contacts are really gone from WhatsApp (seen twice)`);
+  }
+  s.bigDrop = null;
   // دفتر البوت = يلي فعلاً عالواتس
   let gone = 0;
-  if (cap.size >= n0 * 0.5) for (const k of Object.keys(book)) if (k.startsWith(pre) && !cap.get(k.slice(pre.length))?.n) { delete book[k]; delete saved[k]; delete blid[k]; gone++; }
+  const goneList = [];
+  for (const k of goneKeys) { if (book[k]) { lost[k] = { n: book[k], b: saved[k] === book[k] || tried[k] === book[k] || isPh(tid, book[k]) ? 1 : 0 }; if (goneList.length < 40) goneList.push({ ph: k.slice(pre.length), ...lost[k] }); } delete book[k]; delete saved[k]; delete blid[k]; gone++; }
   let withLid = 0, phs = 0;
-  for (const [num, r] of cap) { if (!r.n) continue; book[pre + num] = r.n; blid[pre + num] = r.l; if (r.l) withLid++; if (isPh(tid, r.n)) phs++; }
+  for (const [num, r] of cap) { if (!r.n) continue; book[pre + num] = r.n; blid[pre + num] = r.l; if (r.l) withLid++; if (isPh(tid, r.n)) phs++; if (lost[pre + num]) delete lost[pre + num]; }
+  writeJsonSafe(LOST_FILE, lost);
   writeJsonSafe(BOOK_FILE, book); writeJsonSafe(SAVED_FILE, saved); keepBlid();
   try { fs.writeFileSync(bookFlag(tid), new Date().toISOString()); } catch {}
   s.stateDirty = false; s.lastPull = Date.now(); s.sentSince = 0; s.pullOk = true;
@@ -1044,7 +1066,9 @@ async function pullContacts(tid, why) {
   const chats = new Set(); try { for (const r of q.all('SELECT DISTINCT phone FROM contacts WHERE tenant_id = ? AND phone IS NOT NULL', tid)) { const d = String(r.phone).replace(/\D/g, ''); if (d.length >= 8) chats.add(d); } } catch {}
   const c = { ok: 0, missing: 0, name: 0, nolid: 0, unconfirmed: 0 }, add = { missing: 0, name: 0, nolid: 0 };
   for (const [k, it] of Object.entries(cq)) {
-    if (!k.startsWith(pre) || !it.s || now - it.s < 8 * 60_000) continue;
+    if (!k.startsWith(pre)) continue;
+    if (!it.s && it.u) { const num = k.slice(pre.length), r = cap.get(num); if (verdict(tid, num, r?.n || '', !!r?.l, chats.has(num)) === 'ok') { delete cq[k]; c.ok++; } continue; } // ناطر لبكرا بس الموبايل أكّدو
+    if (!it.s || now - it.s < confirmWait(it) - 2 * 60_000) continue;
     const num = k.slice(pre.length), r = cap.get(num); c[judge(tid, k, it, verdict(tid, num, r?.n || '', !!r?.l, chats.has(num)), now)]++;
   }
   // 2) كل رقم راسلنا لازم يكون محفوظ (بالاسم الصح، ومأكّد من الموبايل)
@@ -1058,9 +1082,15 @@ async function pullContacts(tid, why) {
     const r = cap.get(num), v = verdict(tid, num, r?.n || '', !!r?.l, false); if (v === 'ok') continue;
     cq[k] = { n: '', f: 0, nb: now, t: 0, s: 0, e: '', a: now, w: 'known:' + v, r: 0 }; add[v] = (add[v] || 0) + 1;
   }
+  // 3) أي اسم إنكليزي حطّو البوت (حتى لو مو رقم محادثة): بيتحوّل للعربي
+  if (contactsOn(tid)) for (const k of Object.keys(saved)) {
+    if (!k.startsWith(pre) || cq[k] || saved[k] !== book[k] || !/[A-Za-z@_]/.test(book[k] || '')) continue; const num = k.slice(pre.length);
+    if (verdict(tid, num, book[k], !!blid[k], false) !== 'name') continue;
+    cq[k] = { n: '', f: 0, nb: now, t: 0, s: 0, e: '', a: now, w: 'latin', r: 0 }; add.name++;
+  }
   keepQueue();
   const probe = {}; for (const n of PROBE) probe[n] = cap.get(n) || null;
-  s.lastPullInfo = { at: new Date().toISOString(), why, records: cap.size, lidOnly, withLid, placeholders: phs, gone, chats: chats.size, checked: c, queued: add, queue: Object.keys(cq).filter(k => k.startsWith(pre)).length, probe };
+  s.lastPullInfo = { at: new Date().toISOString(), why, records: cap.size, lidOnly, withLid, placeholders: phs, gone, goneList, lost: Object.keys(lost).filter(k => k.startsWith(pre)).length, chats: chats.size, checked: c, queued: add, queue: Object.keys(cq).filter(k => k.startsWith(pre)).length, probe };
   try { fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit.json'), JSON.stringify(s.lastPullInfo, null, 1)); } catch {}
   console.log(`[wa] tenant ${tid}: contacts pulled from WhatsApp (${why}): ${cap.size} saved (${withLid} confirmed by your phone); checked ${JSON.stringify(c)}; queued ${JSON.stringify(add)}`);
   return true;
