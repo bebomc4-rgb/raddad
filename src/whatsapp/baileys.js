@@ -106,7 +106,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
     ...(version ? { version } : {}),
     getMessage: async () => undefined
   });
-  s.sock = sock;
+  s.sock = sock; s.saveCreds = saveCreds;
   sock.ev.on('creds.update', (...a) => {
     const p = (async () => {
       await saveCreds(...a);
@@ -563,8 +563,12 @@ export function contactsDiag(tenantId) {
   const probe = {}; for (const n of PROBE) { const k = pre + n; let db = null; try { db = q.all('SELECT jid, phone, name, last_at FROM contacts WHERE tenant_id = ? AND (phone = ? OR jid LIKE ?)', tenantId, n, '%' + n.slice(-8) + '%'); } catch {} probe[n] = { real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '', lid: !!blid[k], queue: cq[k] || null, db, log: lines.filter(l => l.includes(n.slice(-9))).slice(-15).map(l => l.slice(0, 220)) }; }
   return { svc, active: (() => { try { return isActive(); } catch { return null; } })(), frozen: (() => { try { return frozen(); } catch { return null; } })(), bookReady: bookReady(tenantId), book: cnt(book), saved: cnt(saved), withLid: Object.keys(blid).filter(k => k.startsWith(pre) && blid[k]).length, latinBot: Object.keys(book).filter(k => k.startsWith(pre) && saved[k] === book[k] && /[A-Za-z@_]/.test(book[k])).length, botNoLid: Object.keys(book).filter(k => k.startsWith(pre) && saved[k] === book[k] && !blid[k]).length, realNames: cnt(realNames), queue, stateDirty: !!s?.stateDirty, lastPull: s?.lastPullInfo || null, wa: s?.status || null, lastSyncErr: s?.lastSyncErr || null,
     rejected24h: lines.filter(l => l.includes('REJECTED a contacts change') || l.includes('WhatsApp rejected «')).length, probe,
+    keys: (() => { const out = { mine: String(s?.sock?.authState?.creds?.myAppStateKeyId || ''), phone: s?.phoneKey || '', phoneV: s?.phoneKeyV || 0, files: [] };
+      try { for (const f of fs.readdirSync(authDir(tenantId))) { if (!f.startsWith('app-state-sync-key-')) continue; let j = {}; try { j = JSON.parse(fs.readFileSync(path.join(authDir(tenantId), f), 'utf8')); } catch {} const st = fs.statSync(path.join(authDir(tenantId), f));
+        out.files.push({ id: f.slice(19, -5), mtime: st.mtime.toISOString(), ts: String(j.timestamp ?? ''), fp: j.fingerprint ? { raw: j.fingerprint.rawId, cur: j.fingerprint.currentIndex, dev: j.fingerprint.deviceIndexes } : null }); } } catch {}
+      out.files.sort((a, b) => a.mtime < b.mtime ? -1 : 1); return out; })(),
     plog: (() => { const PL = s?.plog || [], want = new Set([...PROBE, ...(s?.recentSent || [])]); const sum = {}; for (const x of PL) { const k = 'd' + x.d + ':' + x.op + (x.l ? '+lid' : '') + (x.ex ? '!ex' : ''); sum[k] = (sum[k] || 0) + 1; }
-      return { n: PL.length, vmin: PL.length ? Math.min(...PL.map(x => x.v)) : 0, vmax: PL.length ? Math.max(...PL.map(x => x.v)) : 0, me: String(s?.sock?.user?.id || ''), sum, ex: PL.filter(x => x.ex).slice(-20), hits: PL.filter(x => want.has(x.ph)).slice(-400), recentSent: s?.recentSent || [] }; })(),
+      return { all: PL.slice(-2500), n: PL.length, vmin: PL.length ? Math.min(...PL.map(x => x.v)) : 0, vmax: PL.length ? Math.max(...PL.map(x => x.v)) : 0, me: String(s?.sock?.user?.id || ''), sum, ex: PL.filter(x => x.ex).slice(-20), hits: PL.filter(x => want.has(x.ph)).slice(-400), recentSent: s?.recentSent || [] }; })(),
     site: siteLast.filter(x => x.t === tenantId).map(x => { const k = pre + x.phone; return { at: x.at, ph: x.phone.slice(-4), name: x.name, real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }; }) };
 }
 export function siteNames(tenantId, list) {
@@ -891,21 +895,33 @@ async function notePatches(tid, s, sock, kids) {
     const me = Number(String(sock.user?.id || '').split(':')[1]?.split('@')[0] ?? -1);
     for (const p of list) {
       let sd; try { sd = proto.SyncdPatch.decode(Buffer.isBuffer(p.content) ? p.content : Buffer.from(Object.values(p.content))); } catch { continue; }
-      const v = Number(sd.version?.version || 0), d = Object.prototype.hasOwnProperty.call(sd, 'deviceIndex') ? Number(sd.deviceIndex) : -1, ex = sd.exitCode?.code ? String(sd.exitCode.code) + ' ' + (sd.exitCode.text || '') : '';
-      if (!(sd.mutations || []).length) { (s.plog ||= []).push({ v, d, op: sd.externalMutations ? 'EXT' : 'NONE', ex }); continue; }
+      const k64 = (x) => { try { return x ? Buffer.from(x).toString('base64') : ''; } catch { return ''; } };
+      const v = Number(sd.version?.version || 0), d = Object.prototype.hasOwnProperty.call(sd, 'deviceIndex') ? Number(sd.deviceIndex) : -1, pk = k64(sd.keyId?.id), ex = sd.exitCode?.code ? String(sd.exitCode.code) + ' ' + (sd.exitCode.text || '') : '';
+      if (d === 0 && pk && v >= (s.phoneKeyV || 0)) { s.phoneKey = pk; s.phoneKeyV = v; }
+      if (!(sd.mutations || []).length) { (s.plog ||= []).push({ v, d, op: sd.externalMutations ? 'EXT' : 'NONE', ex, pk: pk.slice(0, 12) }); continue; }
       for (const mu of sd.mutations) {
         let rec = null; try { await dec([mu], { version: 0, hash: Buffer.alloc(128), indexValueMap: {} }, getKey, (x) => { rec = x; }, false); } catch {}
         const idx = rec?.index; if (!Array.isArray(idx) || idx[0] !== 'contact') continue;
         const jid = String(idx[1] || ''), ca = rec.syncAction?.value?.contactAction || {};
         const ph = /@s\.whatsapp\.net$/.test(jid) ? jid.split('@')[0].split(':')[0] : String(ca.pnJid || '').split('@')[0] || jid;
-        const op = mu.operation === 1 ? 'RM' : 'SET', e = { v, d, op, ph, n: String(ca.fullName || ca.firstName || ''), l: ca.lidJid ? 1 : 0, sp: ca.saveOnPrimaryAddressbook ? 1 : 0 };
+        const op = mu.operation === 1 ? 'RM' : 'SET', e = { v, d, op, ph, n: String(ca.fullName || ca.firstName || ''), l: ca.lidJid ? 1 : 0, sp: ca.saveOnPrimaryAddressbook ? 1 : 0, pk: pk.slice(0, 12), rk: k64(mu.record?.keyId?.id).slice(0, 12) };
         if (ex) e.ex = ex;
         const sk = v + ':' + ph + ':' + op; if ((s.plogSeen ||= new Set()).has(sk)) continue; s.plogSeen.add(sk);
         (s.plog ||= []).push(e);
         if (op === 'RM' && d !== me && (saved[tid + ':' + ph] || (s.recentSent || []).includes(ph)) && (s.rmLog = (s.rmLog || 0) + 1) <= 300) console.error(`[wa] tenant ${tid}: device ${d} REMOVED contact ${ph} (v${v})`);
       }
     }
-    if (s.plog.length > 4000) s.plog.splice(0, s.plog.length - 4000);
+    if (s.plog?.length > 4000) s.plog.splice(0, s.plog.length - 4000);
+    // البوت لازم يشفّر بنفس المفتاح يلي عم يستعملو الموبايل هلق (Baileys بياخد آخر مفتاح بالرسالة، مو الأحدث)
+    const mine = String(sock.authState?.creds?.myAppStateKeyId || '');
+    if (s.phoneKey && mine && s.phoneKey !== mine && !s.keySwitching) {
+      s.keySwitching = true;
+      try {
+        const have = (await sock.authState.keys.get('app-state-sync-key', [s.phoneKey]))?.[s.phoneKey];
+        if (have) { sock.authState.creds.myAppStateKeyId = s.phoneKey; await s.saveCreds?.(); console.log(`[wa] tenant ${tid}: contacts key: ours was ${mine.slice(0, 12)}, your phone uses ${s.phoneKey.slice(0, 12)} (v${s.phoneKeyV}) — switched to the phone's key`); }
+        else if ((s.keyMiss = (s.keyMiss || 0) + 1) <= 3) console.error(`[wa] tenant ${tid}: your phone uses contacts key ${s.phoneKey.slice(0, 12)} that we don't have (ours ${mine.slice(0, 12)})`);
+      } finally { s.keySwitching = false; }
+    }
   } catch (e) { console.error('[wa] patch log', e.message); }
 }
 let cqT = null, blidT = null;
