@@ -1,0 +1,9 @@
+name: diag (no restart)
+on: workflow_dispatch
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: read the encrypted diag (does not touch the bot)
+        run: |
+          echo "DIAG-BEGIN"; curl -fsS -m 30 "https://k-fast-ai.pages.dev/api/diag?t=$(date +%s)" || true; echo; echo "DIAG-END"
