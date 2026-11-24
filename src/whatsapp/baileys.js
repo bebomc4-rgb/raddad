@@ -565,7 +565,7 @@ export function contactsDiag(tenantId) {
   const probe = {}; for (const n of PROBE) { const k = pre + n; let db = null; try { db = q.all('SELECT jid, phone, name, last_at FROM contacts WHERE tenant_id = ? AND (phone = ? OR jid LIKE ?)', tenantId, n, '%' + n.slice(-8) + '%'); } catch {} probe[n] = { real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '', lid: !!blid[k], queue: cq[k] || null, db, log: lines.filter(l => l.includes(n.slice(-9))).slice(-15).map(l => l.slice(0, 220)) }; }
   return { svc, active: (() => { try { return isActive(); } catch { return null; } })(), frozen: (() => { try { return frozen(); } catch { return null; } })(), bookReady: bookReady(tenantId), book: cnt(book), saved: cnt(saved), withLid: Object.keys(blid).filter(k => k.startsWith(pre) && blid[k]).length, latinBot: Object.keys(book).filter(k => k.startsWith(pre) && saved[k] === book[k] && /[A-Za-z@_]/.test(book[k])).length, botNoLid: Object.keys(book).filter(k => k.startsWith(pre) && saved[k] === book[k] && !blid[k]).length, realNames: cnt(realNames), queue, stateDirty: !!s?.stateDirty, lastPull: s?.lastPullInfo || null, wa: s?.status || null, lastSyncErr: s?.lastSyncErr || null,
     rejected24h: lines.filter(l => l.includes('REJECTED a contacts change') || l.includes('WhatsApp rejected «')).length, probe,
-    phone: { variants: s?.var || null, ab: s?.ab || null, wo: s?.wo || null, waOnlyMode: waOnlyMode(s), refused: Object.keys(abNo).filter(k => k.startsWith(pre)).length, whatsappOnly: Object.keys(wa1).filter(k => k.startsWith(pre)).length, removedWo: Object.keys(woRm).filter(k => k.startsWith(pre)).length, probeAt: s?.abProbeAt || 0 },
+    phone: { refusing: refusing(s), probeAt: s?.probeAt || 0, variants: s?.var || null, ab: s?.ab || null, wo: s?.wo || null, waOnlyMode: waOnlyMode(s), refused: Object.keys(abNo).filter(k => k.startsWith(pre)).length, whatsappOnly: Object.keys(wa1).filter(k => k.startsWith(pre)).length, removedWo: Object.keys(woRm).filter(k => k.startsWith(pre)).length },
     keys: (() => { const out = { mine: String(s?.sock?.authState?.creds?.myAppStateKeyId || ''), phone: s?.phoneKey || '', phoneV: s?.phoneKeyV || 0, files: [] };
       try { for (const f of fs.readdirSync(authDir(tenantId))) { if (!f.startsWith('app-state-sync-key-')) continue; let j = {}; try { j = JSON.parse(fs.readFileSync(path.join(authDir(tenantId), f), 'utf8')); } catch {} const st = fs.statSync(path.join(authDir(tenantId), f));
         out.files.push({ id: f.slice(19, -5), mtime: st.mtime.toISOString(), ts: String(j.timestamp ?? ''), fp: j.fingerprint ? { raw: j.fingerprint.rawId, cur: j.fingerprint.currentIndex, dev: j.fingerprint.deviceIndexes } : null }); } } catch {}
@@ -903,8 +903,14 @@ function phoneReact(tid, s, ph, d, v, f, live) {
   s.ab ||= { refused: 0, ok: 0, okV: 0 }; s.wo ||= { kept: 0, removed: 0 };
   { const vk = (prev.sp ? 'book' : 'whatsapp') + (prev.lj ? '+lid' : '') + (prev.ins ? ':new' : ':edit'), r = f.op === 'RM' ? 'deleted' : f.l ? 'saved' : 'kept'; ((s.var ||= {})[vk] ||= { saved: 0, kept: 0, deleted: 0 })[r]++; }
   if (prev.sp) {
-    if (f.op === 'SET' && f.l) { if (prev.ins) { s.ab.refused = 0; s.ab.ok++; s.ab.okV = v; } delete abNo[key]; keepAb(); }
-    else { if (prev.ins) s.ab.refused++; abNo[key] = 1; keepAb(); if (live && (s.refLog = (s.refLog || 0) + 1) <= 200) console.error(`[wa] tenant ${tid}: your phone did not take contact ${ph} into its address book (${f.op === 'RM' ? 'deleted it' : 'kept it without saving'}) — saving it as a WhatsApp contact`); }
+    if (f.op === 'SET' && f.l) {
+      if (prev.ins) {
+        const was = refusing(s); s.ab.refused = 0; s.ab.ok++; s.ab.okV = v;
+        if (was && live) { const now = Date.now(); let n = 0; for (const [k2, it] of Object.entries(cq)) if (k2.startsWith(tid + ':') && !it.s) { it.nb = now; it.u = 0; it.t = 0; n++; } keepQueue(); console.log(`[wa] tenant ${tid}: your phone is taking new contacts again — saving all ${n} waiting numbers now`); }
+      }
+      delete abNo[key]; keepAb();
+    }
+    else { if (prev.ins) s.ab.refused++; abNo[key] = 1; keepAb(); if (live && (s.refLog = (s.refLog || 0) + 1) <= 200) console.error(`[wa] tenant ${tid}: your phone did not take contact ${ph} into its address book (${f.op === 'RM' ? 'deleted it' : 'kept it without saving'}) — it waits in the queue until your phone takes new contacts (WhatsApp > Settings > Privacy > Contacts > WhatsApp contacts)`); }
   } else {
     if (f.op === 'RM') { s.wo.removed++; woRm[key] = Date.now(); if ((s.woLog = (s.woLog || 0) + 1) <= 100) console.error(`[wa] tenant ${tid}: your phone DELETED the WhatsApp contact ${ph} too (v${v})`); }
     else { s.wo.kept++; delete woRm[key]; }
@@ -1176,10 +1182,17 @@ async function pullContacts(tid, why) {
   return true;
 }
 // الحفظ الجديد أول شي، وإعادة الإرسال (لرقم انحفظ بس الموبايل ما أكّدو) وحدة كل 10 ثواني بس، لحتى ما نضغط عالواتس
+// الموبايل عم يمسح كل رقم جديد (إعداد «جهات اتصال واتساب» مسكّر عليه): ما منبعت غير رقم جديد واحد كل نص ساعة لنعرف إذا انفتح،
+// والباقي بيستنّى بالطابور. التعديل على رقم موجود بدفتر الموبايل بيضل ماشي عادي
+const refusing = (s) => (s?.ab?.refused || 0) >= 3;
+const isInsert = (k) => !(book[k] && blid[k]); // مو موجود (مأكّد) بدفتر الموبايل
 function nextDue(tid, now, allowR) {
-  const pre = tid + ':'; let best = null, bt = Infinity, bestR = null, btR = Infinity;
-  for (const k in cq) { if (!k.startsWith(pre)) continue; const it = cq[k]; if (it.s) continue; const nb = it.nb || 0; if (nb > now) continue; if (it.r) { if (nb < btR) { bestR = k; btR = nb; } } else if (nb < bt) { best = k; bt = nb; } }
-  return best || (allowR ? bestR : null);
+  const pre = tid + ':', s = sessions.get(tid), gate = refusing(s), probeOk = !gate || now - (s?.probeAt || 0) > 30 * 60_000;
+  let best = null, bt = Infinity, bestR = null, btR = Infinity;
+  for (const k in cq) { if (!k.startsWith(pre)) continue; const it = cq[k]; if (it.s) continue; const nb = it.nb || 0; if (nb > now) continue; if (gate && !probeOk && isInsert(k)) continue; if (it.r) { if (nb < btR) { bestR = k; btR = nb; } } else if (nb < bt) { best = k; bt = nb; } }
+  const k = best || (allowR ? bestR : null);
+  if (k && gate && isInsert(k)) { s.probeAt = now; console.log(`[wa] tenant ${tid}: your phone is not taking new contacts — trying one (${k.slice(pre.length)}) to see if it does now`); }
+  return k;
 }
 async function processKey(tid, k) {
   const it = cq[k], num = k.slice(String(tid).length + 1), s = sessions.get(tid), now = Date.now();
