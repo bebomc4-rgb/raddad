@@ -165,9 +165,8 @@ export async function start(tenantId, { pairPhone = null } = {}) {
       clearInterval(s.lidTimer); s.lidTimer = setInterval(() => resolveLids(tenantId).catch(() => {}), 15 * 60_000);
       // كل 10 دقايق: أي رقم بقاعدة الزباين ما انحفظ بجهات الاتصال بيرجع ينضاف للطابور
       clearInterval(s.saveTimer); s.saveTimer = setInterval(() => queueAllKnown(tenantId), 10 * 60_000);
-      setTimeout(() => bookResync(tenantId, sock, state).catch(e => console.error('[wa] address book sync', e.message)), 20000); // منجيب أسماء جهات اتصالك كلها من الواتس
-      setTimeout(() => auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)), 45000); // فحص عند الطلب بس
-      clearInterval(s.auditTimer); s.auditTimer = setInterval(() => { auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)); resaveFromFile(tenantId); maybeRebuild(tenantId); }, 30_000); // ملفات الطلب بتتفحص كل 30 ثانية
+      s.openAt = Date.now(); s.lastPull = 0; s.stateDirty = false; // عامل جهات الاتصال بيسحب كل جهات الاتصال من الواتس بعد 25 ثانية، وبعدين بيحفظ
+      clearInterval(s.auditTimer); s.auditTimer = setInterval(() => { auditContacts(tenantId).catch(e => console.error('[wa] audit', e.message)); resaveFromFile(tenantId); }, 30_000); // ملفات الطلب بتتفحص كل 30 ثانية
       setTimeout(() => queueAllKnown(tenantId), 90000); // بعد ما يخلص مزامنة الواتس، منحفظ كل الأرقام يلي راسلت قبل
       if (Number(tenantId) === KO_TENANT) setTimeout(() => { try { learnCards(tenantId, M.myTexts(tenantId, selfJids(sock))); } catch (e) { console.error('[wa] cards', e.message); } }, 100000);
       { const tt = getTenant(tenantId); if (tt?.bot_enabled) trialStatus(tt); } // بيسجّل الرقم للتجربة بس إذا المجيب شغّال (يلي بدو حفظ الأرقام بس ما بتنحرق تجربتو)
@@ -333,12 +332,12 @@ export async function start(tenantId, { pairPhone = null } = {}) {
             console.log(`[wa] tenant ${tenantId}: KO account confirmed by WhatsApp for ${phone}`);
             // (23/11/2026) منخبّر الموقع فوراً لينعمل الحساب (بالاسم يلي كتبو الزبون) حتى لو ما رجع للموقع. كان الحساب يضيع، والرقم يضل «زبون XXXX»
             { const cm = String(text || '').toUpperCase().match(/KO-([A-Z0-9]{6})\b/); if (cm) setTimeout(() => fetch('https://ko-sport.pages.dev/api/acct/wa-done', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ t: cm[1] }), signal: AbortSignal.timeout(20000) }).then(r => r.json()).then(j => console.log(`[ko-otp] site account for ${phone}: ${JSON.stringify(j).slice(0, 100)}`)).catch(e => console.error('[ko-otp] wa-done', e.message)), 1500); }
-            if (hasService(tenantId, 'contacts_new')) saveSoon(tenantId, phone); // الموقع رح يبعت الاسم الحقيقي خلال ثواني
+            if (hasService(tenantId, 'contacts_new')) enqueue(tenantId, phone, { delay: 90_000, why: 'ko-code' }); // الموقع بيبعت الاسم الحقيقي خلال ثواني (wa-done)
             continue;
           }
         }
         // تفاعل (❤️👍) أو رسالة فاضية: البوت ما بيرد عليها، بس الرقم لازم ينحفظ
-        if (!text && !mediaNote) { if (phone && hasService(tenantId, 'contacts_new')) saveSoon(tenantId, phone); continue; }
+        if (!text && !mediaNote) { if (phone && hasService(tenantId, 'contacts_new')) enqueue(tenantId, phone, { delay: 5 * 60_000, why: 'msg' }); continue; }
         // بس الأرقام يلي البوت رح يرد عليها: منعلّمها مقروءة ومنحلّل صوتها وصورها. الباقي بيضل متل ما هو (مو مقروء) لترد إنت
         const mine = !m.key.fromMe && (botWillHandle(tenantId, { jid, phone }) || (await import('../wa-products.js')).productsOwner(tenantId, phone));
         if (mine) sock.readMessages([m.key]).catch(() => {});
@@ -354,10 +353,10 @@ export async function start(tenantId, { pairPhone = null } = {}) {
           if (Number(tenantId) === KO_TENANT) { learnInfo(tenantId, phone, chatInfo(tenantId, phone, text)); rescanChat(tenantId, phone); }
           const now = realNames[key] || '';
           if (now !== before) { keepNames(); console.log(`[wa] tenant ${tenantId}: name for ${phone}: «${now}»`); }
-          if (hasService(tenantId, 'contacts_new')) { if (now && now !== before) saveContact(tenantId, phone, now, true).catch(() => {}); else saveSoon(tenantId, phone); }
+          if (hasService(tenantId, 'contacts_new')) { if (now && now !== before) enqueue(tenantId, phone, { name: now, force: 1, why: 'name' }); else enqueue(tenantId, phone, { delay: 5 * 60_000, why: 'msg' }); }
         }
         // إنت يلي بعتت أول (من الموبايل): الرقم لازم ينحفظ كمان
-        if (m.key.fromMe && phone && hasService(tenantId, 'contacts_new')) saveSoon(tenantId, phone);
+        if (m.key.fromMe && phone && hasService(tenantId, 'contacts_new')) enqueue(tenantId, phone, { delay: 5 * 60_000, why: 'you' });
         console.log(`[wa] tenant ${tenantId}: ${m.key.fromMe ? 'you replied to' : 'message from'} ${phone || jid}: ${(text || mediaNote || '').slice(0, 60).replace(/\n/g, ' ')}`);
         handleInbound(tenantId, { jid, phone, name: m.pushName || null, text, mediaNote, mediaUrl, waId: m.key.id, fromMe: !!m.key.fromMe });
       } catch (e) { console.error('[wa] inbound', e.message); }
@@ -553,17 +552,16 @@ const selfJids = (sock) => { const p = phoneFromJid(sock?.user?.id), l = String(
 // فحص (23/11/2026: «زباين بيسجّلو بالموقع واسمن ما عم ينحفظ»): آخر 40 اسم وصلو من الموقع، لـ /api/diag
 const siteLast = [];
 export function contactsDiag(tenantId) {
-  const pre = tenantId + ':', cnt = (o) => Object.keys(o).filter(k => k.startsWith(pre)).length, s = sessions.get(tenantId);
+  const pre = tenantId + ':', cnt = (o) => Object.keys(o).filter(k => k.startsWith(pre)).length, s = sessions.get(tenantId), now = Date.now();
   let svc = {}; try { svc = { contacts_new: hasService(tenantId, 'contacts_new'), contacts_old: hasService(tenantId, 'contacts_old'), on: contactsOn(tenantId) }; } catch (e) { svc = { err: e.message }; }
-  return { svc, active: (() => { try { return isActive(); } catch { return null; } })(), frozen: (() => { try { return frozen(); } catch { return null; } })(), bookReady: bookReady(tenantId), book: cnt(book), saved: cnt(saved), realNames: cnt(realNames), queue: bulk.get(tenantId)?.size || 0, wa: s?.status || null, canSave: !!s?.sock?.addOrEditContact, lastSyncErr: s?.lastSyncErr || null,
-    fromLog: (() => { try { const t = fs.readFileSync(path.join(DATA_DIR, 'server.log'), 'utf8'), seen = {}, out = [];
-      for (const m of t.matchAll(/KO account confirmed by WhatsApp for (\d+)/g)) seen[m[1]] = 1;
-      for (const n of Object.keys(seen)) { const k = pre + n; out.push({ ph: n.slice(-4), real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }); }
-      const ph = Object.keys(seen).filter(n => isPh(tenantId, book[pre + n] || '') && saved[pre + n] && !isPh(tenantId, saved[pre + n])).slice(0, 5);
-      const lines = t.split('\n'), grep = {}; for (const n of ph) grep[n.slice(-4)] = lines.filter(l => l.includes(n)).slice(-10).map(l => l.slice(0, 200));
-      const stuck = Object.keys(book).filter(k => k.startsWith(pre) && isPh(tenantId, book[k]) && realNames[k] && !isPh(tenantId, realNames[k])).map(k => ({ phone: k.slice(pre.length), book: book[k], real: realNames[k] }));
-      return { stuck, grep, bytes: t.length, confirmed: out.length, siteBatches: (t.match(/\[ko-contacts\]/g) || []).length, noRealName: out.filter(x => !x.real).length, notSavedReal: out.filter(x => x.real && x.book !== x.real).length, list: out.filter(x => !x.real || x.book !== x.real).slice(0, 80) }; } catch (e) { return e.message; } })(),
-    audit: (() => { try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'contacts-audit.json'), 'utf8')); } catch { return null; } })(),
+  const Q = Object.entries(cq).filter(([k]) => k.startsWith(pre));
+  const queue = { total: Q.length, due: Q.filter(([, it]) => !it.s && !it.u && (it.nb || 0) <= now).length, later: Q.filter(([, it]) => !it.s && !it.u && (it.nb || 0) > now).length, sentWaiting: Q.filter(([, it]) => it.s).length, unconfirmed: Q.filter(([, it]) => it.u).length, errors: Q.filter(([, it]) => it.e).length,
+    why: Q.reduce((o, [, it]) => { o[it.w || '?'] = (o[it.w || '?'] || 0) + 1; return o; }, {}), worst: Q.filter(([, it]) => it.e || it.u || (it.t || 0) >= 2).slice(0, 30).map(([k, it]) => ({ ph: k.slice(pre.length), ...it })) };
+  let logT = ''; try { logT = fs.readFileSync(path.join(DATA_DIR, 'server.log'), 'utf8'); } catch {}
+  const lines = logT ? logT.split('\n') : [];
+  const probe = {}; for (const n of PROBE) { const k = pre + n; let db = null; try { db = q.all('SELECT jid, phone, name, last_at FROM contacts WHERE tenant_id = ? AND (phone = ? OR jid LIKE ?)', tenantId, n, '%' + n.slice(-8) + '%'); } catch {} probe[n] = { real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '', lid: !!blid[k], queue: cq[k] || null, db, log: lines.filter(l => l.includes(n.slice(-9))).slice(-15).map(l => l.slice(0, 220)) }; }
+  return { svc, active: (() => { try { return isActive(); } catch { return null; } })(), frozen: (() => { try { return frozen(); } catch { return null; } })(), bookReady: bookReady(tenantId), book: cnt(book), saved: cnt(saved), withLid: Object.keys(blid).filter(k => k.startsWith(pre) && blid[k]).length, latinBot: Object.keys(book).filter(k => k.startsWith(pre) && saved[k] === book[k] && /[A-Za-z@_]/.test(book[k])).length, botNoLid: Object.keys(book).filter(k => k.startsWith(pre) && saved[k] === book[k] && !blid[k]).length, realNames: cnt(realNames), queue, stateDirty: !!s?.stateDirty, lastPull: s?.lastPullInfo || null, wa: s?.status || null, lastSyncErr: s?.lastSyncErr || null,
+    rejected24h: lines.filter(l => l.includes('REJECTED a contacts change') || l.includes('WhatsApp rejected «')).length, probe,
     site: siteLast.filter(x => x.t === tenantId).map(x => { const k = pre + x.phone; return { at: x.at, ph: x.phone.slice(-4), name: x.name, real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }; }) };
 }
 export function siteNames(tenantId, list) {
@@ -600,13 +598,14 @@ let bookT = null, bookSeen = 0;
 // منسجّل كل اسم بيوصل خلال المزامنة الكاملة، وبالآخر منشيل من نسخة البوت كل رقم ما عاد محفوظ عندك
 const rebuilding = new Map(); // tenantId → Set(keys)
 export function noteContacts(tenantId, list) {
-  let n = 0; const fresh = rebuilding.get(String(tenantId));
+  let n = 0, lidN = 0; const fresh = rebuilding.get(String(tenantId));
   for (const c of list || []) {
     const id = String(c.id || ''), pn = /@s\.whatsapp\.net$/.test(id) ? id : String(c.phoneNumber || '');
     const num = pn.split('@')[0].split(':')[0].replace(/\D/g, ''), nm = String(c.name || '').trim();
-    if (num.length >= 8 && nm) { book[tenantId + ':' + num] = nm; n++; if (fresh) fresh.add(tenantId + ':' + num); }
+    if (num.length >= 8 && nm) { book[tenantId + ':' + num] = nm; n++; if (fresh) fresh.add(tenantId + ':' + num); if (c && 'lid' in c) { blid[tenantId + ':' + num] = !!c.lid; lidN++; } }
   }
   if (n) { bookSeen += n; clearTimeout(bookT); bookT = setTimeout(() => { try { writeJsonSafe(BOOK_FILE, book); } catch {} }, 2000); }
+  if (lidN) keepBlid();
 }
 // الاسم المحفوظ بجهات اتصالك لهالرقم (أو '' إذا مو محفوظ)
 export function bookName(tenantId, phone) {
@@ -798,14 +797,7 @@ export async function requestAppStateKeys(tenantId, ids) {
   return true;
 }
 // إذا الواتس رفض تغيير: منرجّع نسخة جهات الاتصال من الواتس من الصفر (مرة كل 5 دقايق بالأكتر) لتتصلّح نسخة البوت
-let fixAt = 0;
-async function fixContactsState(tenantId) {
-  const s = sessions.get(tenantId); if (!s?.sock?.resyncAppState || Date.now() - fixAt < 5 * 60_000) return; fixAt = Date.now();
-  console.log(`[wa] tenant ${tenantId}: re-syncing contacts state from WhatsApp after a rejection`);
-  await s.sock.authState.keys.set({ 'app-state-sync-version': { critical_unblock_low: null } });
-  await s.sock.resyncAppState(['critical_unblock_low'], true);
-  console.log(`[wa] tenant ${tenantId}: contacts state re-synced`);
-}
+async function fixContactsState(tenantId) { const s = sessions.get(tenantId); if (s) s.stateDirty = true; } // العامل بيسحب النسخة كاملة قبل الحفظ الجاي
 // فحص: شو موجود فعلاً عند الواتس من جهات الاتصال. بيشتغل مرة وحدة بس إذا في ملف data/contacts-audit-request.txt
 // إعادة حفظ أرقام معيّنة: إذا في ملف data/contacts-resave.txt (رقم بكل سطر) منعيد حفظهم بالدور. الأسماء يلي إنت حاططها ما منلمسها
 function resaveFromFile(tenantId) {
@@ -816,40 +808,11 @@ function resaveFromFile(tenantId) {
   console.log(`[wa] tenant ${tenantId}: re-saving ${n} numbers from contacts-resave.txt`);
   queueContacts(tenantId, nums.map(p => ({ phone: p })));
 }
-// (23/11/2026) فحص لمرة وحدة: هل الأسماء يلي البوت حفظها موجودة فعلاً عالواتس (غيث 0991795623 ما بيّن عند صاحب المتجر)
-try { const f1 = path.join(DATA_DIR, 'contacts-audit-2311b.flag'); if (!fs.existsSync(f1)) { fs.writeFileSync(f1, '1'); fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit-request.txt'), '1'); } } catch {}
-let auditing = false;
+// فحص عند الطلب: ملف data/contacts-audit-request.txt ← العامل بيسحب كل جهات الاتصال من الواتس وبيكتب النتيجة بـ data/contacts-audit.json
 async function auditContacts(tenantId) {
-  const req = path.join(DATA_DIR, 'contacts-audit-request.txt'); if (auditing || Number(tenantId) !== KO_TENANT || !fs.existsSync(req)) return;
-  auditing = true; try { await auditContactsRun(tenantId, req); } finally { auditing = false; }
-}
-async function auditContactsRun(tenantId, req) {
+  const req = path.join(DATA_DIR, 'contacts-audit-request.txt'); if (Number(tenantId) !== KO_TENANT || !fs.existsSync(req)) return;
   try { fs.unlinkSync(req); } catch {}
-  const s = sessions.get(tenantId); if (!s?.sock?.resyncAppState) return;
-  const cap = new Map(); const h = (list) => { for (const c of list || []) if (c?.id) cap.set(c.id, c); };
-  s.sock.ev.on('contacts.upsert', h);
-  console.log(`[wa] tenant ${tenantId}: audit — downloading all contacts from WhatsApp…`);
-  try {
-    await s.sock.authState.keys.set({ 'app-state-sync-version': { critical_unblock_low: null } });
-    await s.sock.resyncAppState(['critical_unblock_low'], true);
-    await new Promise(r => setTimeout(r, 8000));
-  } finally { s.sock.ev.off('contacts.upsert', h); }
-  const onServer = new Map(); let lidIdx = 0, pnIdx = 0, withLid = 0, withPn = 0; const lidExamples = [];
-  for (const [id, c] of cap) {
-    if (/@lid$/.test(id)) { lidIdx++; if (lidExamples.length < 5) lidExamples.push(c); } else if (/@s\.whatsapp\.net$/.test(id)) pnIdx++;
-    if (c.lid) withLid++; if (c.phoneNumber) withPn++;
-    const pn = /@s\.whatsapp\.net$/.test(id) ? id : String(c.phoneNumber || '');
-    const num = pn.split('@')[0].split(':')[0].replace(/\D/g, ''); if (num) onServer.set(num, c.name || '');
-  }
-  const mine = Object.entries(saved).filter(([k]) => k.startsWith(tenantId + ':')).map(([k, v]) => [k.slice(String(tenantId).length + 1), v]);
-  const missing = mine.filter(([n]) => !onServer.has(n)).map(([n]) => n);
-  const placeholdersOnServer = [...onServer.values()].filter(isPlaceholder).length;
-  const sample = {}; for (const n of ['963991795623', '963946444567', '963943527267', '963938398554', '963968943086', '963987331027', '963968003483']) sample[n] = onServer.has(n) ? onServer.get(n) : null;
-  const out = { at: new Date().toISOString(), serverContacts: cap.size, pnIndexed: pnIdx, lidIndexed: lidIdx, withLid, withPn, placeholdersOnServer, botSaved: mine.length, botSavedMissingOnServer: missing.length, sample, lidExamples, missing };
-  fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit.json'), JSON.stringify(out, null, 1));
-  // (23/11/2026) يلي البوت حفظهن وما لقيناهن عالواتس: منعيد حفظهن مرة وحدة
-  try { const f2 = path.join(DATA_DIR, 'contacts-resave-2311.flag'); if (missing.length && !fs.existsSync(f2)) { fs.writeFileSync(f2, '1'); fs.writeFileSync(path.join(DATA_DIR, 'contacts-resave.txt'), missing.join('\n')); resaveFromFile(tenantId); } } catch {}
-  console.log(`[wa] tenant ${tenantId}: audit — WhatsApp has ${cap.size} contacts (pn ${pnIdx}, lid ${lidIdx}); bot saved ${mine.length}, missing on WhatsApp ${missing.length}`);
+  const s = sessions.get(tenantId); if (s) s.lastPull = 0;
 }
 // طوارئ (31 تشرين الأول): حفظ/تعديل جهات الاتصال موقّف كلياً لحتى صاحب المنصة يرجّع يشغّلو بنفسو.
 // ما في أي اسم بيتغيّر طول ما الملف data/contacts-frozen موجود (بينعمل لحالو هلق).
@@ -880,31 +843,50 @@ try {
     fs.writeFileSync(mark, new Date().toISOString());
   }
 } catch (e) { console.error('[wa] undo renames', e.message); }
-setInterval(async () => {
+setInterval(() => {
   if (restoring || !fs.existsSync(RESTORE) || !isActive()) return;
   restoring = true;
   try {
-    const list = JSON.parse(fs.readFileSync(RESTORE, 'utf8')), left = { ...list };
-    for (const [k, name] of Object.entries(list)) {
-      const [tid, num] = k.split(':'), st = sessions.get(Number(tid));
-      if (!st?.sock?.addOrEditContact || st.status !== 'open') continue;
-      try {
-        await st.sock.addOrEditContact(num + '@s.whatsapp.net', { fullName: name, firstName: String(name).split(' ')[0], saveOnPrimaryAddressbook: true });
-        saved[k] = name; book[k] = name; delete left[k];
-        console.log(`[wa] tenant ${tid}: contact ${num} restored → «${name}»`);
-      } catch (e) { console.error('[wa] restore contact', num, e.message); }
-      await new Promise(r => setTimeout(r, 3000));
-    }
-    try { writeJsonSafe(SAVED_FILE, saved); if (Object.keys(book).length > 50) writeJsonSafe(BOOK_FILE, book); } catch {}
-    if (Object.keys(left).length) fs.writeFileSync(RESTORE, JSON.stringify(left));
-    else fs.renameSync(RESTORE, RESTORE + '.done-' + Date.now());
+    const list = JSON.parse(fs.readFileSync(RESTORE, 'utf8')); let n = 0;
+    for (const [k, name] of Object.entries(list)) { const [tid, num] = k.split(':'); if (num && name && enqueue(Number(tid), num, { name: String(name), force: 2, why: 'restore' })) n++; }
+    fs.renameSync(RESTORE, RESTORE + '.done-' + Date.now());
+    console.log(`[wa] restore: ${n} names queued`);
   } catch (e) { console.error('[wa] restore', e.message); }
   restoring = false;
 }, 30_000).unref();
 
-const arCache = new Map();
+// =====================================================================================
+// ===== حفظ جهات الاتصال المضمون (24/11/2026، صاحب المتجر: «ما بدي ولا رقم ما ينحفظ نهائياً») =====
+// السبب الأساسي (من كود Baileys نفسو، appPatch بـ chats.ts): لما الواتس يرفض حفظ (409 conflict، بيصير إذا الموبايل رفع تغيير
+// بنفس اللحظة)، Baileys ما بيفحص الرفض وبيسجّل عندو إنو الحفظ صار. من هديك اللحظة كل حفظ جاي بينبني على نسخة غلط من جهات
+// الاتصال: السيرفر بيقبلو، بس الموبايل ما بيطبّقو. هيك غيث كان «محفوظ» عالسيرفر وما بيبيّن عالموبايل.
+// وكمان الأرقام كانت بطابور بالذاكرة (ومؤقّت 20 دقيقة)، فكل إعادة تشغيل للبوت كانت تضيّعها.
+// الحل:
+//  1) طابور واحد محفوظ بملف (data/contacts-queue.json) لكل حفظ: ما بيضيع شي إذا البوت رجع اشتغل
+//  2) حفظ واحد بالمرة، وأي رفض ← منرجّع نسخة جهات الاتصال كاملة من الواتس (من الصفر) ومنعيد (لحد 3 مرات)
+//  3) التأكيد: الموبايل لما يطبّق الحفظ بيرجع يرفع جهة الاتصال ومعها معرّف lid. كل رقم منضل نعيدلو لحتى الموبايل يأكّدو،
+//     وكل ساعة منسحب كل جهات الاتصال من الواتس: أي رقم راسلنا ومو محفوظ (أو محفوظ «زبون» ومنعرف اسمو) بيرجع للطابور لحالو
+// القاعدة بتضل: أي اسم حقيقي محفوظ ما بيتغيّر أبداً. بيتغيّر بس «زبون XXXX» لما منعرف الاسم الحقيقي
+// =====================================================================================
+const LID_CHECK = true;
+const PROBE = ['963991795623', '963965374561', '201012379611', '963987331027', '963946444567', '963943527267'];
+const QUEUE_FILE = path.join(DATA_DIR, 'contacts-queue.json');
+const LIDS_BOOK_FILE = path.join(DATA_DIR, 'wa-addressbook-lid.json');
+let cq = {}; for (const f of [QUEUE_FILE, QUEUE_FILE + '.prev']) { try { const o = JSON.parse(fs.readFileSync(f, 'utf8')); if (o && typeof o === 'object') { cq = o; break; } } catch {} }
+let blid = readJsonSafe(LIDS_BOOK_FILE); // «مشترك:رقم» → true إذا آخر نسخة لجهة الاتصال رفعها الموبايل (معها lid)
+let cqT = null, blidT = null;
+function keepQueue() { clearTimeout(cqT); cqT = setTimeout(() => { try { const t = JSON.stringify(cq); fs.writeFileSync(QUEUE_FILE + '.tmp', t); try { fs.copyFileSync(QUEUE_FILE, QUEUE_FILE + '.prev'); } catch {} fs.renameSync(QUEUE_FILE + '.tmp', QUEUE_FILE); } catch (e) { console.error('[wa] contacts queue file', e.message); } }, 1000); }
+function keepBlid() { clearTimeout(blidT); blidT = setTimeout(() => { try { writeJsonSafe(LIDS_BOOK_FILE, blid); } catch {} }, 3000); }
+function keepBook() { clearTimeout(savedT); savedT = setTimeout(() => { try { writeJsonSafe(SAVED_FILE, saved); writeJsonSafe(BOOK_FILE, book); } catch {} }, 1500); }
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+async function within(p, ms, what) { let to; const t = new Promise(r => { to = setTimeout(() => r('timeout'), ms); }); const r = await Promise.race([Promise.resolve(p).then(() => 'ok'), t]); clearTimeout(to); if (r === 'timeout') throw new Error(what + ' took too long'); }
+
+// الأسماء الإنكليزية (أو «@abdallah») بتتحوّل لعربي قبل الحفظ (صاحب المتجر 23/11/2026)
+const AR_FILE = path.join(DATA_DIR, 'ar-names.json');
+const arCache = new Map(Object.entries(readJsonSafe(AR_FILE))); let arT = null;
+const latinRaw = (name) => String(name || '').replace(/[@_#.\d]+/g, ' ').replace(/\s+/g, ' ').trim();
 async function arName(tenantId, name) {
-  const raw = String(name || '').replace(/[@_#.\d]+/g, ' ').replace(/\s+/g, ' ').trim(); if (!/[A-Za-z]{2,}/.test(raw)) return /[\p{Script=Arabic}]{2,}/u.test(raw) ? raw : '';
+  const raw = latinRaw(name); if (!/[A-Za-z]{2,}/.test(raw)) return /[\p{Script=Arabic}]{2,}/u.test(raw) ? raw : '';
   if (arCache.has(raw)) return arCache.get(raw);
   let out = '';
   try {
@@ -912,137 +894,226 @@ async function arName(tenantId, name) {
     const { text } = await chat(resolveAI(getTenant(tenantId), { prefer: 'smart' }), { system: 'إنت بتحوّل أسماء أشخاص مكتوبة بالحروف الإنكليزية لنفس الاسم بالحروف العربية (متل ما بيكتبو السوري). رجّع الاسم بالعربي بس، بلا أي كلمة تانية. إذا مو اسم شخص رجّع كلمة: لا', messages: [{ role: 'user', content: raw }], json: false, temperature: 0, maxTokens: 40 });
     const t = String(text || '').replace(/["'«»\n]/g, ' ').replace(/\s+/g, ' ').trim();
     if (/^[\p{Script=Arabic}\s]{2,40}$/u.test(t) && t !== 'لا') out = t;
-  } catch (e) { console.error('[wa] arName', e.message); }
+  } catch (e) { console.error('[wa] arName', e.message); return ''; } // خطأ بالاتصال: ما منحفظ النتيجة، منرجع نجرّب
   arCache.set(raw, out); if (out) console.log(`[wa] name «${raw}» → «${out}»`);
+  clearTimeout(arT); arT = setTimeout(() => { try { writeJsonSafe(AR_FILE, Object.fromEntries(arCache)); } catch {} }, 2000);
   return out;
 }
-// شيل جهة اتصال (بس للأسماء يلي البوت حاططها «زبون XXXX») قبل ما نرجع نحفظها بالاسم الحقيقي
-async function dropContact(sock, num) {
-  const jid = num + '@s.whatsapp.net';
-  try {
-    if (typeof sock.removeContact === 'function') await sock.removeContact(jid);
-    else if (typeof sock.chatModify === 'function') await sock.chatModify({ contact: null }, jid);
-    else return false;
-    console.log(`[wa] contact ${num}: removed the placeholder before saving the real name`);
-    await new Promise(r => setTimeout(r, 4000));
-    return true;
-  } catch (e) { console.error('[wa] remove contact', num, e.message); return false; }
+// الاسم الحقيقي يلي لازم ينحط (أو '' إذا ما منعرفو). الإنكليزي يلي ما زبط تحويلو منعاملو متل ما منعرفو
+function realFor(key) {
+  const rn = String(realNames[key] || '').replace(/[‎‏]/g, '').trim(); if (!/[\p{L}]{2,}/u.test(rn)) return '';
+  if (!/[A-Za-z@_]/.test(rn)) return rn.slice(0, 60);
+  const raw = latinRaw(rn); return arCache.has(raw) ? arCache.get(raw) : rn;
 }
-// مرة وحدة (23/11/2026، صاحب المتجر: «عدّل الـ 29 زبون»): 
-// 1) أي اسم البوت غيّرو لشي مو اسم شخص (من السجل: «X» → «مسارات حلب الباب»/«القدموس…»/«لما سألتك») بيرجع للاسم يلي كان قبلو
-// 2) كل رقم محفوظ «زبون XXXX» ومنعرف اسمو الحقيقي بينشال وبينحفظ من جديد بالاسم (التعديل العادي ما بيثبت). بيعيد المحاولة لحد 3 مرات
-const FIX_STUCK = path.join(DATA_DIR, 'contacts-fix-stuck-2.json');
-setInterval(async () => {
-  try {
-    let st = { n: 0 }; try { st = JSON.parse(fs.readFileSync(FIX_STUCK, 'utf8')); } catch {}
-    if (st.n >= 3 || st.busy && Date.now() - st.busy < 30 * 60_000 || frozen() || !isActive()) return;
-    const tid = KO_TENANT, s = sessions.get(tid); if (!s?.sock?.addOrEditContact || s.status !== 'open' || !bookReady(tid)) return;
-    if (st.at && Date.now() - st.at < 10 * 60_000) return; // بين محاولة ومحاولة 10 دقايق (لتوصل مزامنة الواتس)
-    st.busy = Date.now(); fs.writeFileSync(FIX_STUCK, JSON.stringify(st));
-    const pre = tid + ':';
-    if (!st.n) { // 1) تراجع عن التغييرات الغلط
-      const log = fs.readFileSync(path.join(DATA_DIR, 'server.log'), 'utf8'), last = {};
-      for (const m of log.matchAll(/\[wa\] tenant (\d+): contact (\d+) «([^»]+)» → «([^»]+)»/g)) { if (Number(m[1]) !== tid) continue; (last[m[2]] = last[m[2]] || []).push([m[3], m[4]]); }
-      let u = 0;
-      for (const [num, ch] of Object.entries(last)) {
-        const k = pre + num, cur = book[k] || ch[ch.length - 1][1], base = (x) => String(x).split(' - ')[0].replace(/ \d{4,}$/, '');
-        if (isPh(tid, cur) || validName(base(cur))) continue; // الاسم الحالي مقبول
-        let back = ''; for (let i = ch.length - 1; i >= 0; i--) { const f = ch[i][0]; if (isPh(tid, f) || validName(base(f))) { back = f; break; } }
-        // رجوع لـ «زبون XXXX» بس إذا الاسم الحالي أكيد مو اسم شخص (شركة شحن/مكتب/جملة)، وإلا بنرجع بس لاسم حقيقي كان قبلو
-        if (!back || (isPh(tid, back) && !/مسارات|القدموس|قدموس|يلا غو|برونتو|الهرم|الفؤاد|شحن|مكتب|فرع|سألتك|شركة|توصيل/.test(cur))) continue;
-        if (isPh(tid, back)) delete realNames[k]; else realNames[k] = back;
-        console.log(`[wa] tenant ${tid}: undo wrong rename ${num} «${cur}» → «${back}»`);
-        if (await saveContact(tid, num, back, true, true)) u++; await new Promise(r => setTimeout(r, 3000));
-      }
-      keepNames(); console.log(`[wa] tenant ${tid}: undid ${u} wrong renames`);
-    }
-    const list = Object.keys(book).filter(k => k.startsWith(pre) && isPh(tid, book[k]) && realNames[k] && !isPh(tid, realNames[k]));
-    console.log(`[wa] tenant ${tid}: fixing ${list.length} contacts saved as placeholder with a known real name (remove + add), try ${st.n + 1}`);
-    let ok = 0;
-    for (const k of list) { const num = k.slice(pre.length); if (await saveContact(tid, num, realNames[k], true)) ok++; await new Promise(r => setTimeout(r, 3000)); }
-    console.log(`[wa] tenant ${tid}: fixed ${ok}/${list.length} placeholder contacts`);
-    st = { n: st.n + 1, at: Date.now(), last: { list: list.length, ok } }; fs.writeFileSync(FIX_STUCK, JSON.stringify(st));
-  } catch (e) { console.error('[wa] fix stuck', e.message); }
-}, 60_000).unref();
-// (23/11/2026) «زباين بيسجّلو بالموقع واسمن ما عم ينحفظ»: الواتس بيقبل أول حفظ لجهة الاتصال بس، وأي تعديل بعدو ما بيثبت عالموبايل
-// (السجل: «زبون 4567» → «بيان ماهر شاكر» انكتب نجاح، بس دفتر العناوين رجع «زبون 4567»). لهيك الرقم الجديد بلا اسم معروف
-// ما بينحفظ «زبون XXXX» فوراً: منستنّى 20 دقيقة يوصل الاسم (من الموقع أو من المحادثة) لينحفظ من أول مرة بالاسم الحقيقي.
-const soon = new Map();
-function saveSoon(tenantId, phone) {
-  const num = String(phone || '').replace(/\D/g, ''); if (num.length < 8) return;
+function isOwnerNum(tenantId, num) {
+  try { const s = sessions.get(tenantId), t = getTenant(tenantId), own = [phoneFromJid(s?.sock?.user?.id), ...String(t?.settings?.owner_numbers || '').split(/[,،\s]+/), t?.settings?.notify_number].map(x => String(x || '').replace(/\D/g, '')).filter(x => x.length >= 8); return own.some(o => o.endsWith(num.slice(-9)) || num.endsWith(o.slice(-9))); } catch { return false; }
+}
+const isChatNum = (tenantId, num) => { try { return !!q.get('SELECT 1 FROM contacts WHERE tenant_id = ? AND phone = ? LIMIT 1', tenantId, num); } catch { return false; } };
+// شو ناقص لهالرقم؟ ok | missing (مو محفوظ) | name (محفوظ «زبون» ومنعرف اسمو) | nolid (انحفظ بس الموبايل ما أكّدو)
+function verdict(tenantId, num, name, lid, chat) {
   const key = tenantId + ':' + num;
-  if (bookName(tenantId, num) || realNames[key]) { saveContact(tenantId, num, '').catch(() => {}); return; }
-  if (soon.has(key) || soon.size > 5000) return;
-  soon.set(key, setTimeout(() => { soon.delete(key); saveContact(tenantId, num, '').catch(() => {}); }, 20 * 60_000));
+  if (!name) return 'missing';
+  if (!isPh(tenantId, name) && saved[key] === name && /[A-Za-z@_]/.test(name)) { const raw = latinRaw(realNames[key] && /[A-Za-z]/.test(realNames[key]) ? realNames[key] : name); if (/[A-Za-z]{2,}/.test(raw) && (!arCache.has(raw) || arCache.get(raw))) return 'name'; } // اسم إنكليزي حطّو البوت: بيتحوّل للعربي
+  if (!isPh(tenantId, name)) return LID_CHECK && chat && !lid && saved[key] === name ? 'nolid' : 'ok'; // اسم حقيقي: ما منغيّرو، بس إذا نحنا حاطّينو منتأكد إنو الموبايل أخدو
+  const real = realFor(key);
+  if (real && !isPh(tenantId, real)) return 'name';
+  return LID_CHECK && chat && !lid ? 'nolid' : 'ok';
 }
-export async function saveContact(tenantId, phone, name, force = false, force2 = false) {
-  if (frozen()) return false;
-  if (!isActive() || !contactsOn(tenantId)) return false;
-  const s = sessions.get(tenantId), num = String(phone || '').replace(/\D/g, '');
-  if (!s?.sock?.addOrEditContact || s.status !== 'open' || num.length < 8) return false;
-  if (!bookReady(tenantId)) return false; // ما وصلت أسماءك من الواتس لهلق: ما منلمس شي
-  { const rb = rebuilding.get(String(tenantId)); // عم نعيد بناء الدفتر: منستنّى لنعرف شو محفوظ فعلاً (بس لحد 3 دقايق، بعدها منكمّل)
-    if (rb && Date.now() - (rb.at || 0) < 180_000) return false;
-    if (rb) { rebuilding.delete(String(tenantId)); console.log(`[wa] tenant ${tenantId}: rebuild stuck — saving again`); setTimeout(() => queueAllKnown(tenantId), 3000); } }
-  // رقم المتجر نفسو وأرقام صاحب المتجر: لا
-  try { const t = getTenant(tenantId), own = [phoneFromJid(s.sock.user?.id), ...String(t?.settings?.owner_numbers || '').split(/[,،\s]+/), t?.settings?.notify_number].map(x => String(x || '').replace(/\D/g, '')).filter(Boolean); if (own.some(o => o.endsWith(num.slice(-9)) || num.endsWith(o.slice(-9)))) return false; } catch {}
-  const key = tenantId + ':' + num, have = bookName(tenantId, num);
-  const nm = String(realNames[key] || (force ? name : '') || '').replace(/[\u200e\u200f]/g, '').trim();
-  let real = /[\p{L}]{2,}/u.test(nm) ? nm.slice(0, 60) : '';
-  // (23/11/2026، صاحب المتجر) ما منحفظ اسم بالإنكليزي ولا «@abdallah»: منحوّلو لعربي، وإذا ما زبط منحفظ «زبون XXXX»
-  if (real && /[A-Za-z@_]/.test(real)) { const ar = await arName(tenantId, real); if (ar) { real = ar; realNames[key] = ar; keepNames(); } else real = ''; }
-  if (have) {
-    // محفوظ عندك باسم: ما منغيّرو أبداً. بس إذا الاسم «زبون XXXX» ومنعرف الاسم الحقيقي، منبدّلو
-    if (have === real || (real && have.startsWith(real + ' ') && /^\d{4,}$/.test(have.slice(real.length + 1)))) return true;
-    // القاعدة المطلقة (صاحب المتجر): أي اسم حقيقي محفوظ ما بيتغيّر أبداً، مين ما كان حاططو. بيتغيّر بس «زبون XXXX» لاسم كتبو الزبون نفسو
-    // (1 تشرين التاني: اسم حقيقي انقلب «زبون XXXX» لأنو كان في استثناء هون للأسماء يلي البوت حاططها)
-    // (23/11/2026) شلنا استثناء «اسم حطّو البوت وفي أطول منو»: خلّى «محمد علي حمادين» يتقلّب «مسارات حلب الباب» (اسم شركة الشحن من المحادثة) ويرجع، كذا مرة.
-    // هلق: أي اسم مو «زبون XXXX» ما بيتغيّر أبداً، إلا بالتصليح المقصود (fixWrong)
-    if (!isPh(tenantId, have) && !force2) return true;
-    if (isPh(tenantId, have) && !real) return true;
-  }
-  const full = real ? uniqueName(tenantId, real, num, false) : uniqueName(tenantId, prefixOf(tenantId) + ' ' + num.slice(-4), num, true);
-  try {
-    s.lastSyncErr = null;
-    // «زبون XXXX» ← اسم حقيقي: تعديل جهة الاتصال ما بيثبت عالموبايل (بيرجع لأول حفظ)، فمنشيلها ومنرجع نحفظها جديدة بالاسم الحقيقي
-    if (have && real && (isPh(tenantId, have) || force2)) await dropContact(s.sock, num);
-    await s.sock.addOrEditContact(num + '@s.whatsapp.net', { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true });
-    if (s.lastSyncErr) { const e = s.lastSyncErr; s.lastSyncErr = null; fixContactsState(tenantId).catch(() => {}); throw new Error(`WhatsApp rejected it (${e.code} ${e.text})`); }
-    saved[key] = full; book[key] = full; for (const mm of bulk.values()) mm.delete(num); /* انحفظ: منشيلو من الطابور */ clearTimeout(savedT); savedT = setTimeout(() => { try { writeJsonSafe(SAVED_FILE, saved); writeJsonSafe(BOOK_FILE, book); } catch {} }, 1500);
-    console.log(`[wa] tenant ${tenantId}: contact ${num} ${have ? `«${have}» → ` : 'new → '}«${full}»`);
-    return true;
-  } catch (e) { console.error('[wa] save contact', num, e.message); return false; }
+// حط الرقم بالطابور. delay: بعد قديش (مثلاً لنستنّى اسمو من الموقع). force: 1 = الاسم من مصدر موثوق، 2 = تصليح مقصود لاسم غلط
+function enqueue(tenantId, phone, { name = '', force = 0, delay = 0, why = '' } = {}) {
+  const num = String(phone || '').replace(/\D/g, ''); if (num.length < 8 || num.length > 15) return false;
+  const key = tenantId + ':' + num, now = Date.now(), it = cq[key], nb = now + Math.max(0, delay);
+  if (!it && !name && !force && !needsWork(tenantId, num)) return true; // محفوظ أصلاً (التأكيد من الموبايل بيتفحص بالسحب)
+  if (it) {
+    const changed = !!name && name !== it.n;
+    if (name) it.n = name;
+    if (force > (it.f || 0)) it.f = force;
+    if (changed || force === 2) { it.s = 0; it.u = 0; it.t = 0; it.e = ''; it.nb = now; } // اسم جديد: منبعتو هلق
+    else if (!it.s && !it.u && nb < (it.nb || 0)) it.nb = nb;
+  } else cq[key] = { n: name || '', f: force || 0, nb, t: 0, s: 0, e: '', a: now, w: why };
+  keepQueue(); return true;
 }
-
-// حفظ كل الأرقام الموجودة (المحادثات القديمة + كل يلي راسل قبل) بالدور، رقم كل 2.5 ثانية مشان ما ينزعج الواتس
-const bulk = new Map(); // tenantId -> Map(num -> name)
-let bulkTimer = null;
+// الرقم بحاجة شغل؟ (من غير تأكيد الموبايل، هاد بيتفحص بالسحب)
+function needsWork(tenantId, num) { return verdict(tenantId, num, bookName(tenantId, num), true, false) !== 'ok'; }
 export function queueContacts(tenantId, list) {
-  const m = bulk.get(tenantId) || new Map(); let n = 0; const pre = prefixOf(tenantId);
-  for (const { phone, name } of list) { const num = String(phone || '').replace(/\D/g, ''); const bk = bookName(tenantId, num); if (num.length >= 8 && !m.has(num) && (() => { const k = tenantId + ':' + num, sv = saved[k], rn = realNames[k], want = rn || (pre + ' ' + num.slice(-4)); if (!bk) return true; if (isPh(tenantId, bk)) return !!rn && bk !== rn; if (rn && sv && bk === sv && bk !== rn && rn.split(' ').length >= bk.split(' ').length) return true; return false; /* اسم حقيقي محفوظ: ما منلمسو أبداً */ })()) { m.set(num, name || ''); n++; } }
-  bulk.set(tenantId, m);
+  let n = 0;
+  for (const { phone, name } of list || []) {
+    const num = String(phone || '').replace(/\D/g, ''); if (num.length < 8 || isOwnerNum(tenantId, num)) continue;
+    const nm = String(name || '').trim();
+    if (nm) { if (enqueue(tenantId, num, { name: nm, force: 1, why: 'list' })) n++; }
+    else if (needsWork(tenantId, num) && !cq[tenantId + ':' + num]) { if (enqueue(tenantId, num, { why: 'list' })) n++; }
+  }
   if (n) console.log(`[wa] tenant ${tenantId}: ${n} numbers queued to save in contacts`);
-  if (!bulkTimer) bulkTimer = setInterval(async () => {
-    let busy = false;
-    for (const [tid, mm] of bulk) {
-      if (mm.size && (frozen() || !contactsOn(tid))) { mm.clear(); continue; } // الخدمة انلغت أو انوقفت: منفضّي الطابور فوراً
-      const st = sessions.get(tid); if (!mm.size || st?.status !== 'open') continue;
-      const [num, name] = mm.entries().next().value; mm.delete(num); busy = true;
-      await saveContact(tid, num, name).catch(() => {});
-    }
-    if (!busy && [...bulk.values()].every(x => !x.size)) { clearInterval(bulkTimer); bulkTimer = null; }
-  }, 2500);
   return n;
 }
+// (للتوافق مع الكود القديم) أي «احفظ هالرقم» بيروح عالطابور
+export async function saveContact(tenantId, phone, name, force = false, force2 = false) {
+  return enqueue(tenantId, phone, { name: force || force2 ? String(name || '') : '', force: force2 ? 2 : force ? 1 : 0, why: 'direct' });
+}
+// كل تغيير بجهات الاتصال بيمرق من هون: إذا الواتس رفض، منرجّع النسخة كاملة من الواتس ومنعيد (لحد 3 مرات)
+async function contactPatch(tid, fn, label) {
+  const s = sessions.get(tid);
+  for (let i = 1; i <= 3; i++) {
+    if (s.stateDirty && !(await pullContacts(tid, 'before ' + label))) throw new Error('could not refresh the contacts state from WhatsApp');
+    s.lastSyncErr = null;
+    await within(fn(s.sock), 60_000, label);
+    await sleep(300);
+    if (!s.lastSyncErr) return true;
+    const e = s.lastSyncErr; s.lastSyncErr = null; s.stateDirty = true;
+    console.error(`[wa] tenant ${tid}: WhatsApp rejected «${label}» (${e.code} ${e.text}) — refreshing the contacts state and trying again (${i}/3)`);
+    await sleep(2000 * i);
+  }
+  throw new Error('WhatsApp rejected it 3 times');
+}
+// حفظ رقم واحد من الطابور: 'sent' (انبعت، ناطر تأكيد الموبايل) | 'skip' (ما في شي لازم ينعمل) | 'wait' (مو جاهز هلق)
+async function saveCore(tid, num, it) {
+  const s = sessions.get(tid);
+  if (!s?.sock?.addOrEditContact || s.status !== 'open') return 'wait';
+  if (isOwnerNum(tid, num)) return 'skip';
+  const key = tid + ':' + num, have = bookName(tid, num), force2 = it.f === 2;
+  let real = String(realNames[key] || (it.f ? it.n : '') || '').replace(/[‎‏]/g, '').trim();
+  real = /[\p{L}]{2,}/u.test(real) ? real.slice(0, 60) : '';
+  if (real && /[A-Za-z@_]/.test(real)) { const ar = await arName(tid, real); if (ar) { real = ar; realNames[key] = ar; keepNames(); } else real = ''; }
+  const sameReal = (x) => !!real && (x === real || (x.startsWith(real + ' ') && /^\d{4,}$/.test(x.slice(real.length + 1))));
+  let full;
+  const botOwned = !!have && (saved[key] === have || isPh(tid, have)); // جهة الاتصال حطّها البوت (مو إنت)
+  if (have && !isPh(tid, have) && botOwned && /[A-Za-z@_]/.test(have)) { // اسم إنكليزي حطّو البوت: منحوّلو للعربي
+    if (!real) { const ar = await arName(tid, realNames[key] && /[A-Za-z]/.test(realNames[key]) ? realNames[key] : have); if (ar) real = ar; }
+    if (real && !sameReal(have)) full = uniqueName(tid, real, num, false);
+    else if (it.r) full = have;
+    else return 'skip';
+  } else if (have && !isPh(tid, have)) { // اسم حقيقي محفوظ: ما بيتغيّر أبداً، إلا تصليح مقصود
+    if (force2 && real && !sameReal(have)) full = uniqueName(tid, real, num, false);
+    else if (it.r && saved[key] === have) full = have; // نفس الاسم، منعيد بعتو لأنو الموبايل ما أكّدو
+    else return 'skip';
+  } else if (have) { // «زبون XXXX»
+    if (real) full = sameReal(have) ? have : uniqueName(tid, real, num, false);
+    else if (it.r) full = have;
+    else return 'skip';
+  } else full = real ? uniqueName(tid, real, num, false) : uniqueName(tid, prefixOf(tid) + ' ' + num.slice(-4), num, true);
+  if (full === have && !it.r) return 'skip';
+  const jid = num + '@s.whatsapp.net';
+  // تعديل ما ثبت 3 مرات، أو جهة اتصال حطّها البوت والموبايل ما أكّدها بعد مرة: منشيلها ومنرجع نحفظها جديدة (الموبايل بيعاملها جديدة)
+  if (have && ((full !== have && (it.t || 0) >= 3) || (full === have && botOwned && (it.t || 0) >= 1))) {
+    try { await contactPatch(tid, (sock) => sock.removeContact(jid), 'remove ' + num); console.log(`[wa] tenant ${tid}: contact ${num} «${have}» removed to save it again`); await sleep(3000); } catch (e) { console.error(`[wa] tenant ${tid}: remove contact ${num}`, e.message); }
+  }
+  await contactPatch(tid, (sock) => sock.addOrEditContact(jid, { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true }), 'save ' + num);
+  saved[key] = full; book[key] = full; blid[key] = false; keepBook(); keepBlid();
+  console.log(`[wa] tenant ${tid}: contact ${num} ${have ? `«${have}» → ` : 'new → '}«${full}»${it.r ? ' (again: your phone had not confirmed it)' : ''}`);
+  return 'sent';
+}
+function judge(tid, k, it, v, now) {
+  if (v === 'ok') { delete cq[k]; return 'ok'; }
+  if (v === 'nolid' && (it.t || 0) >= 4) {
+    it.s = 0; it.u = (it.u || 0) + 1; it.t = 0; it.r = 1; it.nb = now + (it.u >= 3 ? 7 : 1) * 24 * 3600_000;
+    console.error(`[wa] tenant ${tid}: contact ${k.slice(String(tid).length + 1)} sent 4 times but your phone has not confirmed it — trying again ${it.u >= 3 ? 'next week' : 'tomorrow'}`);
+    return 'unconfirmed';
+  }
+  it.s = 0; it.r = v === 'name' ? 0 : 1; it.nb = now; return v;
+}
+// تأكيد مباشر (كل دقيقة): من الأحداث يلي بتوصل من الواتس لما الموبايل يرفع جهة الاتصال
+function verifyLive(tid) {
+  const pre = tid + ':', now = Date.now(); let ch = 0;
+  for (const [k, it] of Object.entries(cq)) { if (!k.startsWith(pre) || !it.s || now - it.s < 10 * 60_000) continue; judge(tid, k, it, verdict(tid, k.slice(pre.length), book[k] || '', !!blid[k], isChatNum(tid, k.slice(pre.length))), now); ch++; }
+  if (ch) keepQueue();
+}
+// سحب كل جهات الاتصال من الواتس (من الصفر): بيصلّح نسخة البوت، وبيتأكد إنو كل رقم محفوظ فعلاً
+async function pullContacts(tid, why) {
+  const s = sessions.get(tid); if (!s?.sock?.resyncAppState || s.status !== 'open') return false;
+  s.pullTry = Date.now();
+  const cap = new Map(); let lidOnly = 0;
+  const h = (list) => { for (const c of list || []) { const id = String(c?.id || ''); if (/@lid$/.test(id) && !c?.phoneNumber) { lidOnly++; continue; } const pn = /@s\.whatsapp\.net$/.test(id) ? id : String(c?.phoneNumber || ''); const num = pn.split('@')[0].split(':')[0].replace(/\D/g, ''); if (num.length >= 8) cap.set(num, { n: String(c?.name || '').trim(), l: !!c?.lid }); } };
+  s.sock.ev.on('contacts.upsert', h);
+  try {
+    const keys = s.sock.authState.keys, tx = typeof keys.transaction === 'function' ? (w) => keys.transaction(w, s.sock.authState.creds?.me?.id || 'resync-app-state') : (w) => w();
+    await within(tx(async () => { await keys.set({ 'app-state-sync-version': { critical_unblock_low: null } }); await s.sock.resyncAppState(['critical_unblock_low'], true); }), 150_000, 'contacts sync');
+    await sleep(4000);
+  } catch (e) { console.error(`[wa] tenant ${tid}: pulling contacts from WhatsApp failed (${e.message})`); return false; }
+  finally { s.sock.ev.off('contacts.upsert', h); }
+  const pre = tid + ':', now = Date.now(), n0 = Object.keys(book).filter(k => k.startsWith(pre)).length;
+  if (cap.size < 20 && n0 > 100) { console.error(`[wa] tenant ${tid}: pull got only ${cap.size} contacts (have ${n0}) — ignored`); return false; }
+  // دفتر البوت = يلي فعلاً عالواتس
+  let gone = 0;
+  if (cap.size >= n0 * 0.5) for (const k of Object.keys(book)) if (k.startsWith(pre) && !cap.get(k.slice(pre.length))?.n) { delete book[k]; delete saved[k]; delete blid[k]; gone++; }
+  let withLid = 0, phs = 0;
+  for (const [num, r] of cap) { if (!r.n) continue; book[pre + num] = r.n; blid[pre + num] = r.l; if (r.l) withLid++; if (isPh(tid, r.n)) phs++; }
+  writeJsonSafe(BOOK_FILE, book); writeJsonSafe(SAVED_FILE, saved); keepBlid();
+  try { fs.writeFileSync(bookFlag(tid), new Date().toISOString()); } catch {}
+  s.stateDirty = false; s.lastPull = Date.now(); s.sentSince = 0; s.pullOk = true;
+  // 1) يلي انبعتو: اتأكّدو؟
+  const chats = new Set(); try { for (const r of q.all('SELECT DISTINCT phone FROM contacts WHERE tenant_id = ? AND phone IS NOT NULL', tid)) { const d = String(r.phone).replace(/\D/g, ''); if (d.length >= 8) chats.add(d); } } catch {}
+  const c = { ok: 0, missing: 0, name: 0, nolid: 0, unconfirmed: 0 }, add = { missing: 0, name: 0, nolid: 0 };
+  for (const [k, it] of Object.entries(cq)) {
+    if (!k.startsWith(pre) || !it.s || now - it.s < 8 * 60_000) continue;
+    const num = k.slice(pre.length), r = cap.get(num); c[judge(tid, k, it, verdict(tid, num, r?.n || '', !!r?.l, chats.has(num)), now)]++;
+  }
+  // 2) كل رقم راسلنا لازم يكون محفوظ (بالاسم الصح، ومأكّد من الموبايل)
+  if (hasService(tid, 'contacts_new')) for (const num of chats) {
+    const k = pre + num; if (cq[k] || isOwnerNum(tid, num)) continue;
+    const r = cap.get(num), v = verdict(tid, num, r?.n || '', !!r?.l, true); if (v === 'ok') continue;
+    cq[k] = { n: '', f: 0, nb: now, t: 0, s: 0, e: '', a: now, w: 'check:' + v, r: v === 'nolid' ? 1 : 0 }; add[v]++;
+  }
+  if (hasService(tid, 'contacts_new')) for (const k of Object.keys(realNames)) {
+    if (!k.startsWith(pre) || cq[k]) continue; const num = k.slice(pre.length); if (num.length < 8 || num.length > 15 || chats.has(num) || isOwnerNum(tid, num) || !realFor(k)) continue;
+    const r = cap.get(num), v = verdict(tid, num, r?.n || '', !!r?.l, false); if (v === 'ok') continue;
+    cq[k] = { n: '', f: 0, nb: now, t: 0, s: 0, e: '', a: now, w: 'known:' + v, r: 0 }; add[v] = (add[v] || 0) + 1;
+  }
+  keepQueue();
+  const probe = {}; for (const n of PROBE) probe[n] = cap.get(n) || null;
+  s.lastPullInfo = { at: new Date().toISOString(), why, records: cap.size, lidOnly, withLid, placeholders: phs, gone, chats: chats.size, checked: c, queued: add, queue: Object.keys(cq).filter(k => k.startsWith(pre)).length, probe };
+  try { fs.writeFileSync(path.join(DATA_DIR, 'contacts-audit.json'), JSON.stringify(s.lastPullInfo, null, 1)); } catch {}
+  console.log(`[wa] tenant ${tid}: contacts pulled from WhatsApp (${why}): ${cap.size} saved (${withLid} confirmed by your phone); checked ${JSON.stringify(c)}; queued ${JSON.stringify(add)}`);
+  return true;
+}
+// الحفظ الجديد أول شي، وإعادة الإرسال (لرقم انحفظ بس الموبايل ما أكّدو) وحدة كل 10 ثواني بس، لحتى ما نضغط عالواتس
+function nextDue(tid, now, allowR) {
+  const pre = tid + ':'; let best = null, bt = Infinity, bestR = null, btR = Infinity;
+  for (const k in cq) { if (!k.startsWith(pre)) continue; const it = cq[k]; if (it.s) continue; const nb = it.nb || 0; if (nb > now) continue; if (it.r) { if (nb < btR) { bestR = k; btR = nb; } } else if (nb < bt) { best = k; bt = nb; } }
+  return best || (allowR ? bestR : null);
+}
+async function processKey(tid, k) {
+  const it = cq[k], num = k.slice(String(tid).length + 1), s = sessions.get(tid), now = Date.now();
+  if (it.r) s.lastResend = now;
+  try {
+    const r = await saveCore(tid, num, it);
+    if (r === 'skip') delete cq[k];
+    else if (r === 'wait') it.nb = now + 60_000;
+    else { it.s = Date.now(); it.t = (it.t || 0) + 1; it.e = ''; it.r = 0; s.sentSince = (s.sentSince || 0) + 1; s.lastSent = Date.now(); }
+  } catch (e) {
+    it.t = (it.t || 0) + 1; it.e = String(e?.message || e).slice(0, 140); it.s = 0;
+    it.nb = now + Math.min(6 * 3600_000, 30_000 * 2 ** Math.min(it.t, 9));
+    console.error(`[wa] tenant ${tid}: contact ${num} not saved yet (try ${it.t}): ${it.e}`);
+  }
+  keepQueue();
+}
+// العامل: كل 3 ثواني حفظ واحد (لكل المشتركين بالدور)، وسحب كامل عند الحاجة
+let cwBusy = false, cwTurn = 0;
+async function contactsTick() {
+  if (frozen() || !isActive()) return;
+  const list = [...sessions.entries()]; if (!list.length) return;
+  const now = Date.now();
+  for (let j = 0; j < list.length; j++) {
+    const [tid, s] = list[(cwTurn + j) % list.length];
+    if (s.status !== 'open' || !s.sock?.addOrEditContact || !contactsOn(tid)) continue;
+    if (!hasService(tid, 'contacts_new') && !hasService(tid, 'contacts_old')) continue;
+    if (!s.openAt) s.openAt = now;
+    if (now - s.openAt < 25_000) continue; // اتصال جديد: منستنّى يهدى
+    const needPull = !s.lastPull || s.stateDirty || now - s.lastPull > 60 * 60_000 || (s.sentSince > 0 && now - (s.lastSent || 0) > 15 * 60_000 && now - s.lastPull > 15 * 60_000);
+    if (needPull && now - (s.pullTry || 0) > 60_000) { cwTurn = (cwTurn + j + 1) % list.length; await pullContacts(tid, s.stateDirty ? 'after a rejection' : !s.lastPull ? 'start' : s.sentSince ? 'check after saving' : 'hourly check'); return; }
+    if (!bookReady(tid) && !s.pullOk) continue; // ما منعرف شو محفوظ لهلق: ما منلمس شي
+    if (now - (s.verAt || 0) > 60_000) { s.verAt = now; verifyLive(tid); }
+    const k = nextDue(tid, now, now - (s.lastResend || 0) > 10_000); if (!k) continue;
+    cwTurn = (cwTurn + j + 1) % list.length;
+    await processKey(tid, k); return;
+  }
+}
+setInterval(() => { if (cwBusy) return; cwBusy = true; contactsTick().catch(e => console.error('[wa] contacts worker', e.message)).finally(() => { cwBusy = false; }); }, 3000).unref();
+
 function queueAllKnown(tenantId) {
   const wantNew = hasService(tenantId, 'contacts_new'), wantOld = hasService(tenantId, 'contacts_old');
   if (!wantNew && !wantOld) return;
   resolveLids(tenantId).catch(() => {});
-  if (!bookReady(tenantId)) { // ما وصل دفتر العناوين لهلق: منرجع نطلبو (مرة كل ساعة بالأكتر)
-    const s = sessions.get(tenantId), k = 'book:' + tenantId;
-    if (s?.sock && s.status === 'open' && Date.now() - (retryAt.get(k) || 0) > 3600_000) { retryAt.set(k, Date.now()); bookResync(tenantId, s.sock, { keys: s.sock.authState.keys }).catch(e => console.error('[wa] address book sync', e.message)); }
-    return;
-  }
+  if (!bookReady(tenantId)) { const s = sessions.get(tenantId); if (s) s.lastPull = 0; return; } // ما وصل دفتر العناوين: العامل بيسحبو
   try {
     if (Number(tenantId) === KO_TENANT) {
     // 1) الأسماء من الطلبات القديمة ومن يلي كتبو الزبون بالمحادثات («اسمي…»، «معك…»)
@@ -1052,14 +1123,13 @@ function queueAllKnown(tenantId) {
     }
     for (const m of q.all("SELECT c.phone, m.body FROM messages m JOIN contacts c ON c.id = m.contact_id WHERE m.tenant_id = ? AND m.direction = 'in' AND (m.body LIKE '%اسمي%' OR m.body LIKE '%إسمي%' OR m.body LIKE '%معك %' OR m.body LIKE '%معاك %' OR m.body LIKE '%الاسم%') ORDER BY m.id", tenantId)) {
       const nm = nameFromText(m.body), key = tenantId + ':' + String(m.phone || '').replace(/\D/g, '');
-      if (nm && m.phone && realNames[key] !== nm) { realNames[key] = nm; found++; }
+      if (nm && m.phone && !realNames[key]) { realNames[key] = nm; found++; }
     }
     for (const [k, arr] of Object.entries(histTexts)) { if (!k.startsWith(tenantId + ':')) continue; const ph = k.slice(String(tenantId).length + 1); for (const t of arr) if (learnName(tenantId, ph, t)) found++; }
     for (const m of q.all("SELECT c.phone, m.body FROM messages m JOIN contacts c ON c.id = m.contact_id WHERE m.tenant_id = ? AND m.direction = 'in' AND c.phone IS NOT NULL ORDER BY m.id", tenantId)) { if (learnName(tenantId, String(m.phone).replace(/\D/g, ''), m.body)) found++; }
     if (found) { try { fs.writeFileSync(NAMES_FILE, JSON.stringify(realNames)); } catch {} console.log(`[wa] tenant ${tenantId}: found ${found} real names in old chats/orders`); }
     }
-    // 2) كل الأرقام بالدور: بالاسم الحقيقي إذا منعرفو، وغير هيك «زبون XXXX». ويلي انحفظ «زبون» وهلق عرفنا اسمو بيتحدّث
-    // الجديدة: كل يلي راسل من وقت الربط. القديمة: محادثات الربط + النسخة الاحتياطية
+    // 2) كل الأرقام يلي بحاجة شغل: بالاسم الحقيقي إذا منعرفو، وغير هيك «زبون XXXX»
     const list = (wantNew ? q.all('SELECT phone FROM contacts WHERE tenant_id = ? AND phone IS NOT NULL', tenantId).map(c => ({ phone: c.phone })) : [])
       .concat(wantOld ? (backupNums[tenantId] || []).filter(p => isOld(tenantId, p)).map(p => ({ phone: p })) : []);
     queueContacts(tenantId, list);
@@ -1143,7 +1213,7 @@ export async function bootAll() {
 export function contactsStats(tenantId) {
   const pre = tenantId + ':'; let savedN = 0;
   for (const k in saved) if (k.startsWith(pre)) savedN++;
-  return { saved: savedN, pending: contactsOn(tenantId) ? (bulk.get(tenantId)?.size || 0) : 0, history: (backupNums[tenantId] || []).length, book_ready: bookReady(tenantId), hidden_unknown: (histLids[tenantId] || []).length };
+  return { saved: savedN, pending: contactsOn(tenantId) ? Object.entries(cq).filter(([k, it]) => k.startsWith(pre) && !it.u).length : 0, history: (backupNums[tenantId] || []).length, book_ready: bookReady(tenantId), hidden_unknown: (histLids[tenantId] || []).length };
 }
 // أرقام من النسخة الاحتياطية (انفكّت على جهاز الزبون وإجت الأرقام بس): منضيفها للقديمة ومنحطها بالطابور
 export function importNumbers(tenantId, nums) {
@@ -1309,29 +1379,3 @@ export async function postStatus(tenantId, { image, caption }) {
 
 // الجهاز صار هوي الشغّال (الكمبيوتر وقف): رسائل «سجّل بالواتساب» يلي وصلت وهوي ساكت، منأكّدها ومنرد عليها هلق
 export async function flushKoLater() { /* ملغى: ما منرد على رسائل قديمة */ }
-
-// (23/11/2026، صاحب المتجر: «قلّو إنك بوت وكمّل معو»): رسالة لمرة وحدة للزبون المصري يلي طلب كود التسجيل مرتين وما كمّل
-setInterval(async () => {
-  try {
-    const f = path.join(DATA_DIR, 'msg-201012379611.done'); if (fs.existsSync(f) || !isActive()) return;
-    const s = sessions.get(KO_TENANT); if (!s?.sock || s.status !== 'open') return;
-    fs.writeFileSync(f, new Date().toISOString());
-    await send(KO_TENANT, '201012379611@s.whatsapp.net', { text: 'أهلين فيك 👋\nأنا المساعد الآلي (بوت) تبع متجر KO SPORT 🤖\nشفت إنك طلبت كود التسجيل بموقعنا مرتين وما كمل الحساب. إذا ما وصلك الكود أو صار معك شي، احكيلي هون وبكمّل معك خطوة خطوة 🙏\nوإذا بدك تسأل عن أي منتج كمان أنا جاهز.' });
-    console.log('[wa] sent the follow-up message to 201012379611');
-  } catch (e) { console.error('[wa] follow-up 201012379611', e.message); }
-}, 45_000).unref();
-
-// (23/11/2026) مرة وحدة: الأسماء الإنكليزية (أو «@…») يلي البوت حفظها ← بالعربي؛ وغيث 963991795623 منعيد حفظو (ما بيّن عند صاحب المتجر)
-setInterval(async () => {
-  try {
-    const f = path.join(DATA_DIR, 'contacts-latin-2311.done'); if (fs.existsSync(f) || frozen() || !isActive()) return;
-    const tid = KO_TENANT, s = sessions.get(tid); if (!s?.sock?.addOrEditContact || s.status !== 'open' || !bookReady(tid)) return;
-    fs.writeFileSync(f, new Date().toISOString());
-    const pre = tid + ':', list = Object.keys(book).filter(k => k.startsWith(pre) && /[A-Za-z@]/.test(book[k] || '') && saved[k] && book[k] === saved[k]);
-    console.log(`[wa] tenant ${tid}: ${list.length} bot-saved names in English → Arabic`);
-    let ok = 0;
-    for (const k of list) { const num = k.slice(pre.length), ar = await arName(tid, book[k]); if (!ar) continue; realNames[k] = ar; if (await saveContact(tid, num, ar, true, true)) ok++; await new Promise(r => setTimeout(r, 3000)); }
-    keepNames(); console.log(`[wa] tenant ${tid}: ${ok}/${list.length} names now in Arabic`);
-    const g = pre + '963991795623'; if (realNames[g]) { await saveContact(tid, '963991795623', realNames[g], true, true); console.log('[wa] re-saved 963991795623'); }
-  } catch (e) { console.error('[wa] latin names', e.message); }
-}, 70_000).unref();
