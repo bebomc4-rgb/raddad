@@ -282,7 +282,12 @@ export async function start(tenantId, { pairPhone = null } = {}) {
             if (!ph) rememberLid(tenantId, jid);
           }
           if (ph) { found.push({ phone: ph }); seen(tenantId, ph, Number(m.messageTimestamp?.toNumber?.() ?? m.messageTimestamp ?? 0) || Math.floor(Date.now() / 1000)); }
-          // (ملغى: ما منرد أبداً على رسائل قديمة وصلت والجهاز طافي — كان يبعت «✅» مرة تانية لما يشتغل الكمبيوتر)
+          // (24/11/2026) رمز KO وصل والبوت عم يعيد التشغيل: منعالجو إذا عمرو أقل من نص ساعة. قبل كان يضيع، والزبون يضل ناطر ويبعت من جديد
+          if (!m.key.fromMe && m.message && Number(tenantId) === KO_TENANT && isActive()) {
+            const tx = extract(m.message, true).text, ts = Number(m.messageTimestamp?.toNumber?.() ?? m.messageTimestamp ?? 0);
+            if (tx && /KO-[A-Z0-9]{6}/i.test(tx) && ts && Date.now() / 1000 - ts < 1800) koCode(tenantId, sock, m, jid, ph, tx, true).catch(e => console.error('[ko-otp] late code', e.message));
+          }
+          // الرسائل الأقدم من نص ساعة ما منرد عليها أبداً، والرمز يلي خلّص من قبل (جهاز تاني رد عليه) ما منرد عليه مرة تانية
         } catch {}
       }
       if (found.length && hasService(tenantId, 'contacts_new')) queueContacts(tenantId, found);
@@ -308,36 +313,8 @@ export async function start(tenantId, { pairPhone = null } = {}) {
         // «سجّل بالواتساب» بموقع KO SPORT: الزبون بعت رمز التأكيد. منأكّد رقمو ومنردّ عليه، والبوت ما بيرد على هالرسالة
         if (!m.key.fromMe && text && /KO-[A-Z0-9]{6}/i.test(text)) console.log(`[ko-otp] tenant ${tenantId}: WhatsApp message with a code from ${phone || jid} (active=${isActive()}, koTenant=${Number(tenantId) === KO_TENANT})`);
         if (!m.key.fromMe && text && Number(tenantId) === KO_TENANT && /KO-[A-Z0-9]{6}/i.test(text)) {
-          const { waClaim, holdForLater } = await import('../otp.js');
           if (!isActive()) continue; // الجهاز التاني هوي يلي بيرد: هون ما منعمل شي
-          // رقم مخفي (@lid): واتساب غالباً بيبعت ربط الرقم بعد ثواني، فمنضل نجرّب لحد 20 ثانية قبل ما نطلب من الزبون يكتب رقمو
-          if (!phone && /@lid$/.test(jid)) {
-            for (let i = 0; i < 20 && !phone; i++) {
-              await new Promise(r => setTimeout(r, 1000));
-              try { const pn = await sock.signalRepository?.lidMapping?.getPNForLID?.(jid); if (pn && /@s\.whatsapp\.net$/.test(pn)) phone = phoneFromJid(pn); } catch {}
-            }
-            if (phone) console.log(`[ko-otp] hidden number matched after waiting: ${phone}`);
-          }
-          // ما زبط: منعلّم الرمز، والموقع بيطلب من الزبون يكتب رقمو ومنبعتلو كود
-          if (!phone && waClaim(text, '', true)) {
-            sock.readMessages([m.key]).catch(() => {});
-            const { markBotSent } = await import('../agent.js').catch(() => ({}));
-            const sent = await sock.sendMessage(jid, { text: 'وصلتنا رسالتك 🙏 ارجع لموقع KO SPORT واكتب رقم موبايلك، ومنبعتلك كود التأكيد هون عالواتساب.' }).catch(() => null);
-            if (sent?.key?.id && typeof markBotSent === 'function') markBotSent(sent.key.id);
-            console.log(`[wa] tenant ${tenantId}: KO code from a hidden number (${jid}): the site asks for the number`);
-            continue;
-          }
-          if (phone && waClaim(text, phone)) {
-            sock.readMessages([m.key]).catch(() => {});
-            const { markBotSent } = await import('../agent.js').catch(() => ({}));
-            const sent = await sock.sendMessage(jid, { text: '✅ تأكّد رقمك. ارجع لموقع KO SPORT، حسابك جاهز وبتقدر تكمّل طلبك 🛒' }).catch(() => null);
-            if (sent?.key?.id && typeof markBotSent === 'function') markBotSent(sent.key.id);
-            console.log(`[wa] tenant ${tenantId}: KO account confirmed by WhatsApp for ${phone}`);
-            // (23/11/2026) منخبّر الموقع فوراً لينعمل الحساب (بالاسم يلي كتبو الزبون) حتى لو ما رجع للموقع. كان الحساب يضيع، والرقم يضل «زبون XXXX»
-            { const cm = String(text || '').toUpperCase().match(/KO-([A-Z0-9]{6})\b/); if (cm) setTimeout(() => fetch('https://ko-sport.pages.dev/api/acct/wa-done', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ t: cm[1] }), signal: AbortSignal.timeout(20000) }).then(r => r.json()).then(j => console.log(`[ko-otp] site account for ${phone}: ${JSON.stringify(j).slice(0, 100)}`)).catch(e => console.error('[ko-otp] wa-done', e.message)), 1500); }
-            if (hasService(tenantId, 'contacts_new')) enqueue(tenantId, phone, { delay: 90_000, why: 'ko-code' }); // الموقع بيبعت الاسم الحقيقي خلال ثواني (wa-done)
-            continue;
-          }
+          if (await koCode(tenantId, sock, m, jid, phone, text, false)) continue;
         }
         // تفاعل (❤️👍) أو رسالة فاضية: البوت ما بيرد عليها، بس الرقم لازم ينحفظ
         if (!text && !mediaNote) { if (phone && hasService(tenantId, 'contacts_new')) enqueue(tenantId, phone, { delay: 5 * 60_000, why: 'msg' }); continue; }
@@ -452,6 +429,65 @@ function readJsonSafe(file) {
 const SAVED_FILE = path.join(DATA_DIR, 'wa-saved-contacts.json');
 let saved = readJsonSafe(SAVED_FILE);
 let savedT = null;
+// رمز «KO-XXXXXX» من زبون (سجّل / ادخل بموقع KO SPORT). صاحب المتجر (24/11/2026): «يلي بدو يسجّل فوراً افتحلو وسجّل الحساب، مشان ما يضل يبعت كود التأكيد».
+// الرد صار بعد جواب الموقع: قبل كان يقول «حسابك جاهز» حتى لو الموقع ما لحق يعمل الحساب، فالزبون يرجع يلاقي «انتهى الوقت» ويبعت من جديد
+const koSeen = new Map(); // رمز → وقت: ما منعالج نفس الرمز مرتين
+setInterval(() => { const n = Date.now(); for (const [k, t] of koSeen) if (n - t > 6 * 3600e3) koSeen.delete(k); }, 600e3).unref();
+async function koSiteDone(t, phone) {
+  await new Promise(r => setTimeout(r, 1200)); // الصفحة عم تبعت الرمز للموقع بنفس اللحظة
+  for (let i = 0; i < 3; i++) {
+    for (const h of ['https://ko-sport.pages.dev', 'https://ko-sport.online']) {
+      try {
+        const r = await fetch(h + '/api/acct/wa-done', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ t }), signal: AbortSignal.timeout(15000) });
+        const j = await r.json().catch(() => ({}));
+        console.log(`[ko-otp] site account for ${phone}: ${JSON.stringify(j).slice(0, 100)}`);
+        if (r.status < 500) return j;
+      } catch (e) { console.error('[ko-otp] wa-done', h, e.message); }
+    }
+    await new Promise(r => setTimeout(r, (i + 1) * 8000));
+  }
+  return null;
+}
+const koReply = (j) => j?.blocked ? 'الحساب على هالرقم موقوف. إذا في شي، احكينا هون 🙏'
+  : j?.missing ? '✅ تأكّد رقمك، بس ما في حساب عليه لهلق.\nارجع لصفحة KO SPORT وكمّل اسمك والمحافظة وكلمة السر، وبينعمل حسابك فوراً بلا ما تبعت شي تاني.'
+  : j?.created ? '✅ تأكّد رقمك وانعمل حسابك بـ KO SPORT.\nارجع لصفحة الموقع يلي كنت فيها، بتلاقي حالك داخل 🛒'
+  : j?.existed ? '✅ تأكّد رقمك. ارجع لصفحة KO SPORT يلي كنت فيها، بتلاقي حالك داخل حسابك 🛒'
+  : '✅ تأكّد رقمك. ارجع لصفحة KO SPORT يلي كنت فيها، وبتلاقي حالك داخل خلال ثواني 🛒';
+// بيرجّع true إذا الرسالة كانت رمز تأكيد (البوت ما بيرد عليها كمحادثة). late: وصلت والبوت عم يعيد التشغيل
+async function koCode(tenantId, sock, m, jid, phone, text, late) {
+  const { waClaim } = await import('../otp.js');
+  // رقم مخفي (@lid): واتساب غالباً بيبعت ربط الرقم بعد ثواني، فمنضل نجرّب لحد 20 ثانية قبل ما نطلب من الزبون يكتب رقمو
+  if (!phone && /@lid$/.test(jid)) {
+    for (let i = 0; i < 20 && !phone; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      try { const pn = await sock.signalRepository?.lidMapping?.getPNForLID?.(jid); if (pn && /@s\.whatsapp\.net$/.test(pn)) phone = phoneFromJid(pn); } catch {}
+    }
+    if (phone) console.log(`[ko-otp] hidden number matched after waiting: ${phone}`);
+  }
+  const { markBotSent } = await import('../agent.js').catch(() => ({}));
+  const reply = async (txt) => { const sent = await sock.sendMessage(jid, { text: txt }).catch(() => null); if (sent?.key?.id && typeof markBotSent === 'function') markBotSent(sent.key.id); };
+  // ما زبط: منعلّم الرمز، والموقع بيطلب من الزبون يكتب رقمو ومنبعتلو كود
+  if (!phone && waClaim(text, '', true)) {
+    sock.readMessages([m.key]).catch(() => {});
+    await reply('وصلتنا رسالتك 🙏 ارجع لموقع KO SPORT واكتب رقم موبايلك، ومنبعتلك كود التأكيد هون عالواتساب.');
+    console.log(`[wa] tenant ${tenantId}: KO code from a hidden number (${jid}): the site asks for the number`);
+    return true;
+  }
+  if (!phone || !waClaim(text, phone)) return false;
+  sock.readMessages([m.key]).catch(() => {});
+  if (hasService(tenantId, 'contacts_new')) enqueue(tenantId, phone, { delay: 90_000, why: 'ko-code' }); // الموقع بيبعت الاسم الحقيقي خلال ثواني
+  const cm = String(text || '').toUpperCase().match(/KO-([A-Z0-9]{6})\b/), t = cm && cm[1];
+  if (!t || koSeen.has(t)) return true;
+  koSeen.set(t, Date.now());
+  console.log(`[wa] tenant ${tenantId}: KO code ${t} confirmed by WhatsApp for ${phone}${late ? ' (arrived while restarting)' : ''}`);
+  // منخبّر الموقع (بيعمل الحساب أو بيسجّل الدخول، حتى لو الزبون سكّر الصفحة)، وبعدين منرد حسب جوابو
+  (async () => {
+    const j = await koSiteDone(t, phone);
+    if (late && j?.done) return; // جهاز تاني رد عليه من قبل
+    await reply(koReply(j));
+  })().catch(e => console.error('[ko-otp] reply', e.message));
+  return true;
+}
 const KO_TENANT = Number(process.env.KO_TENANT_ID || 1); // متجر Ko Sport: إلو تعلّم الأسماء الحقيقية من المحادثات
 // الأسماء الحقيقية يلي الزبون كتبها بالمحادثة أو بطلب (مو اسم الواتس)
 const NAMES_FILE = path.join(DATA_DIR, 'ko-names.json');

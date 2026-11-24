@@ -49,7 +49,8 @@ function fresh(ts, nonce) {
 // «سجّل بالواتساب»: الموقع بيفتح رمز (KO-XXXXXX)، الزبون بيبعتو من واتسابو لرقم المتجر، فمنعرف رقمو أكيد
 const open = new Map(); // رمز → { at, phone }
 const early = new Map(); // رمز وصل بالواتساب قبل ما الموقع يلحق يفتحو (ثواني) → { at, phone }
-setInterval(() => { const n = Date.now(); for (const [k, v] of open) if (n - v.at > 20 * 60_000) open.delete(k); for (const [k, v] of early) if (n - v.at > 30 * 60_000) early.delete(k); }, 60_000).unref();
+// (24/11/2026) الرمز بيضل 6 ساعات (كان 20 دقيقة): الزبون ممكن يبعت الرسالة بعد شوي، والموقع بيسأل عنو لما ترجع الصفحة
+setInterval(() => { const n = Date.now(); for (const [k, v] of open) if (n - v.at > 6 * 3600_000) open.delete(k); for (const [k, v] of early) if (n - v.at > 6 * 3600_000) early.delete(k); }, 60_000).unref();
 // طلب جديد بموقع KO SPORT: الموقع بيبعت نص الطلب موقّع، والمجيب بيبعتو واتساب لأرقام صاحب المتجر (صاحب المتجر، 5 تشرين التاني 2026)
 export async function koNotify(body) {
   const { to, text, ts, nonce, sig } = body || {};
@@ -96,7 +97,7 @@ async function koOpen_(body) {
   need(/^[A-Z0-9]{6}$/.test(t || ''), 400, 'رمز غلط'); fresh(ts, nonce);
   need(await verify(`open|${t}|${ts}|${nonce}`, sig), 403, 'توقيع غلط');
   seen.set(nonce, Date.now());
-  need(open.size < 5000, 429, 'كتير');
+  need(open.size < 20000, 429, 'كتير');
   if (!open.has(t)) open.set(t, { at: Date.now(), phone: early.get(t)?.phone || '', hidden: !!early.get(t)?.hidden });
   early.delete(t);
   return { ok: true };
@@ -116,13 +117,13 @@ async function koClaim_(body) {
 export function waClaim(text, phone, hidden) {
   const m = String(text || '').toUpperCase().match(/KO-([A-Z0-9]{6})\b/);
   if (m && !phone && hidden) { // رقم مخفي: منعلّم الرمز «وصل بلا رقم»
-    const o = open.get(m[1]) || (early.size < 2000 && /تأكيد حسابي|دخول لحسابي/.test(String(text)) ? (early.set(m[1], { at: Date.now(), phone: '' }), early.get(m[1])) : null);
+    const o = open.get(m[1]) || (early.size < 10000 && /تأكيد حسابي|دخول لحسابي/.test(String(text)) ? (early.set(m[1], { at: Date.now(), phone: '' }), early.get(m[1])) : null);
     if (!o) return false;
     o.hidden = true; console.log('[ko-otp] code', m[1], 'came from a hidden number'); return true;
   }
   if (!m || !phone) { console.log('[ko-otp] message has a code but no usable number', !!m, phone || ''); return false; }
   const o = open.get(m[1]);
-  if (!o) { if (early.size < 2000 && /تأكيد حسابي|دخول لحسابي/.test(String(text))) { early.set(m[1], { at: Date.now(), phone }); return true; } return false; }
+  if (!o) { if (early.size < 10000 && /تأكيد حسابي|دخول لحسابي/.test(String(text))) { early.set(m[1], { at: Date.now(), phone }); return true; } return false; }
   if (!o.phone) o.phone = phone;
   console.log('[ko-otp] number confirmed for code', m[1], phone);
   return true;
