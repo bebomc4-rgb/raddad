@@ -84,7 +84,7 @@ export async function koContacts(body) {
   let list = []; try { list = JSON.parse(text); } catch {} need(Array.isArray(list), 400, 'ناقص');
   const { siteNames } = await import('./whatsapp/baileys.js');
   const KO = Number(process.env.KO_TENANT_ID || 1);
-  const n = siteNames(KO, list.slice(0, 3000).map(x => ({ phone: intl(x.phone || ''), name: x.name })));
+  const n = siteNames(KO, list.slice(0, 3000).map(x => ({ phone: intl(x.phone || ''), name: x.name, fix: !!x.fix }))); // fix: اسم أكّدو صاحب المتجر من الهوية (بيكتب فوق الاسم الوهمي)
   console.log(`[ko-contacts] ${n} names from the site`);
   return { ok: true, n };
 }

@@ -575,17 +575,22 @@ export function contactsDiag(tenantId) {
     site: siteLast.filter(x => x.t === tenantId).map(x => { const k = pre + x.phone; return { at: x.at, ph: x.phone.slice(-4), name: x.name, real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }; }) };
 }
 export function siteNames(tenantId, list) {
-  const out = [];
+  const out = [], fixes = [];
   for (const x of list || []) {
     const num = String(x.phone || '').replace(/\D/g, ''), nm = String(x.name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
     if (num.length < 8 || !/[\p{L}]{2,}/u.test(nm)) continue;
-    const key = tenantId + ':' + num; realNames[key] = nm; out.push({ phone: num, name: nm });
+    const key = tenantId + ':' + num; realNames[key] = nm;
+    if (x.fix) { fixes.push({ phone: num, name: nm }); continue; } // صاحب المتجر أكّد الاسم من الهوية (بطاقة «تأكيد الاسم» بالموقع): بيكتب فوق الاسم الوهمي
+    out.push({ phone: num, name: nm });
     if (list.length <= 5) { siteLast.push({ t: tenantId, at: new Date().toISOString(), phone: num, name: nm }); if (siteLast.length > 40) siteLast.shift(); }
   }
-  if (!out.length) return 0;
+  if (!out.length && !fixes.length) return 0;
   clearTimeout(namesT); namesT = setTimeout(() => { try { fs.writeFileSync(NAMES_FILE, JSON.stringify(realNames)); } catch {} }, 1500);
-  if (hasService(tenantId, 'contacts_new')) queueContacts(tenantId, out);
-  return out.length;
+  if (hasService(tenantId, 'contacts_new')) {
+    if (out.length) queueContacts(tenantId, out);
+    for (const f of fixes) { enqueue(tenantId, f.phone, { name: f.name, force: 2, why: 'id-confirmed' }); console.log(`[wa] tenant ${tenantId}: name confirmed from the ID card for ${f.phone}: «${f.name}»`); }
+  }
+  return out.length + fixes.length;
 }
 // ===== دفتر عناوين الواتس (الأسماء المحفوظة عندك) =====
 // بيوصل من الواتس مع كل ربط. أي رقم إلو اسم محفوظ ما منقرّبلو أبداً، إلا إذا الاسم «زبون XXXX» يلي نحنا حطيناه
