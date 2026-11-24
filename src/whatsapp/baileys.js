@@ -137,6 +137,7 @@ export async function start(tenantId, { pairPhone = null } = {}) {
           s.lastSyncErr = { code: err?.attrs?.code || '', text: err?.attrs?.text || 'error' };
           console.error(`[wa] tenant ${tenantId}: WhatsApp REJECTED a contacts change: ${s.lastSyncErr.code} ${s.lastSyncErr.text}`);
         }
+        notePatches(tenantId, s, sock, kids);
       }
     } catch {}
   });
@@ -562,6 +563,8 @@ export function contactsDiag(tenantId) {
   const probe = {}; for (const n of PROBE) { const k = pre + n; let db = null; try { db = q.all('SELECT jid, phone, name, last_at FROM contacts WHERE tenant_id = ? AND (phone = ? OR jid LIKE ?)', tenantId, n, '%' + n.slice(-8) + '%'); } catch {} probe[n] = { real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '', lid: !!blid[k], queue: cq[k] || null, db, log: lines.filter(l => l.includes(n.slice(-9))).slice(-15).map(l => l.slice(0, 220)) }; }
   return { svc, active: (() => { try { return isActive(); } catch { return null; } })(), frozen: (() => { try { return frozen(); } catch { return null; } })(), bookReady: bookReady(tenantId), book: cnt(book), saved: cnt(saved), withLid: Object.keys(blid).filter(k => k.startsWith(pre) && blid[k]).length, latinBot: Object.keys(book).filter(k => k.startsWith(pre) && saved[k] === book[k] && /[A-Za-z@_]/.test(book[k])).length, botNoLid: Object.keys(book).filter(k => k.startsWith(pre) && saved[k] === book[k] && !blid[k]).length, realNames: cnt(realNames), queue, stateDirty: !!s?.stateDirty, lastPull: s?.lastPullInfo || null, wa: s?.status || null, lastSyncErr: s?.lastSyncErr || null,
     rejected24h: lines.filter(l => l.includes('REJECTED a contacts change') || l.includes('WhatsApp rejected «')).length, probe,
+    plog: (() => { const PL = s?.plog || [], want = new Set([...PROBE, ...(s?.recentSent || [])]); const sum = {}; for (const x of PL) { const k = 'd' + x.d + ':' + x.op + (x.l ? '+lid' : '') + (x.ex ? '!ex' : ''); sum[k] = (sum[k] || 0) + 1; }
+      return { n: PL.length, vmin: PL.length ? Math.min(...PL.map(x => x.v)) : 0, vmax: PL.length ? Math.max(...PL.map(x => x.v)) : 0, me: String(s?.sock?.user?.id || ''), sum, ex: PL.filter(x => x.ex).slice(-20), hits: PL.filter(x => want.has(x.ph)).slice(-400), recentSent: s?.recentSent || [] }; })(),
     site: siteLast.filter(x => x.t === tenantId).map(x => { const k = pre + x.phone; return { at: x.at, ph: x.phone.slice(-4), name: x.name, real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '' }; }) };
 }
 export function siteNames(tenantId, list) {
@@ -873,9 +876,38 @@ const PROBE = ['963991795623', '963965374561', '201012379611', '963987331027', '
 const QUEUE_FILE = path.join(DATA_DIR, 'contacts-queue.json');
 const LIDS_BOOK_FILE = path.join(DATA_DIR, 'wa-addressbook-lid.json');
 let cq = {}; for (const f of [QUEUE_FILE, QUEUE_FILE + '.prev']) { try { const o = JSON.parse(fs.readFileSync(f, 'utf8')); if (o && typeof o === 'object') { cq = o; break; } } catch {} }
-let blid = readJsonSafe(LIDS_BOOK_FILE);
+let blid = readJsonSafe(LIDS_BOOK_FILE); // «مشترك:رقم» → true إذا آخر نسخة لجهة الاتصال رفعها الموبايل (معها lid)
 const LOST_FILE = path.join(DATA_DIR, 'contacts-lost.json');
-let lost = readJsonSafe(LOST_FILE); const tried = {}; // tried: الاسم يلي عم نحاول نحطّو هلق (إذا الواتس رفضو، ما بيصير «اسم إنت حاطّو») // «مشترك:رقم» → { n: آخر اسم كان محفوظ، b: 1 إذا البوت حطّو } — رقم اختفى من الواتس: بيرجع بنفس الاسم، ما بيتغيّر // «مشترك:رقم» → true إذا آخر نسخة لجهة الاتصال رفعها الموبايل (معها lid)
+let lost = readJsonSafe(LOST_FILE); // «مشترك:رقم» → { n: آخر اسم كان محفوظ، b: 1 إذا البوت حطّو } — رقم اختفى من الواتس: بيرجع بنفس الاسم
+const tried = {}; // الاسم يلي عم نحاول نحطّو هلق (إذا الواتس رفضو، ما بيصير «اسم إنت حاطّو»)
+// سجل التغييرات بجهات الاتصال (من ردود الواتس نفسها): مين غيّر (رقم الجهاز: 0 = الموبايل) وشو (حفظ/حذف). للتشخيص
+async function notePatches(tid, s, sock, kids) {
+  try {
+    const pn = kids.find(c => c?.tag === 'patches'), list = (pn && Array.isArray(pn.content) ? pn.content : kids).filter(c => c?.tag === 'patch' && c.content);
+    if (!list.length) return;
+    const m = await import('baileys'), B = m.default && typeof m.default === 'object' ? m.default : {};
+    const proto = m.proto ?? B.proto, dec = m.decodeSyncdMutations ?? B.decodeSyncdMutations; if (!proto || typeof dec !== 'function') return;
+    const getKey = async (id) => (await sock.authState.keys.get('app-state-sync-key', [id]))?.[id];
+    const me = Number(String(sock.user?.id || '').split(':')[1]?.split('@')[0] ?? -1);
+    for (const p of list) {
+      let sd; try { sd = proto.SyncdPatch.decode(Buffer.isBuffer(p.content) ? p.content : Buffer.from(Object.values(p.content))); } catch { continue; }
+      const v = Number(sd.version?.version || 0), d = Object.prototype.hasOwnProperty.call(sd, 'deviceIndex') ? Number(sd.deviceIndex) : -1, ex = sd.exitCode?.code ? String(sd.exitCode.code) + ' ' + (sd.exitCode.text || '') : '';
+      if (!(sd.mutations || []).length) { (s.plog ||= []).push({ v, d, op: sd.externalMutations ? 'EXT' : 'NONE', ex }); continue; }
+      for (const mu of sd.mutations) {
+        let rec = null; try { await dec([mu], { version: 0, hash: Buffer.alloc(128), indexValueMap: {} }, getKey, (x) => { rec = x; }, false); } catch {}
+        const idx = rec?.index; if (!Array.isArray(idx) || idx[0] !== 'contact') continue;
+        const jid = String(idx[1] || ''), ca = rec.syncAction?.value?.contactAction || {};
+        const ph = /@s\.whatsapp\.net$/.test(jid) ? jid.split('@')[0].split(':')[0] : String(ca.pnJid || '').split('@')[0] || jid;
+        const op = mu.operation === 1 ? 'RM' : 'SET', e = { v, d, op, ph, n: String(ca.fullName || ca.firstName || ''), l: ca.lidJid ? 1 : 0, sp: ca.saveOnPrimaryAddressbook ? 1 : 0 };
+        if (ex) e.ex = ex;
+        const sk = v + ':' + ph + ':' + op; if ((s.plogSeen ||= new Set()).has(sk)) continue; s.plogSeen.add(sk);
+        (s.plog ||= []).push(e);
+        if (op === 'RM' && d !== me && (saved[tid + ':' + ph] || (s.recentSent || []).includes(ph)) && (s.rmLog = (s.rmLog || 0) + 1) <= 300) console.error(`[wa] tenant ${tid}: device ${d} REMOVED contact ${ph} (v${v})`);
+      }
+    }
+    if (s.plog.length > 4000) s.plog.splice(0, s.plog.length - 4000);
+  } catch (e) { console.error('[wa] patch log', e.message); }
+}
 let cqT = null, blidT = null;
 function keepQueue() { clearTimeout(cqT); cqT = setTimeout(() => { try { const t = JSON.stringify(cq); fs.writeFileSync(QUEUE_FILE + '.tmp', t); try { fs.copyFileSync(QUEUE_FILE, QUEUE_FILE + '.prev'); } catch {} fs.renameSync(QUEUE_FILE + '.tmp', QUEUE_FILE); } catch (e) { console.error('[wa] contacts queue file', e.message); } }, 1000); }
 function keepBlid() { clearTimeout(blidT); blidT = setTimeout(() => { try { writeJsonSafe(LIDS_BOOK_FILE, blid); } catch {} }, 3000); }
@@ -1006,6 +1038,7 @@ async function saveCore(tid, num, it) {
   finally { delete tried[key]; }
   if (ownerName) delete saved[key]; else saved[key] = full; // اسم إنت حاطّو (رجّعناه): ما بيصير «تبع البوت»، فما منشيلو ولا منغيّرو أبداً
   book[key] = full; blid[key] = false; keepBook(); keepBlid();
+  (s.recentSent ||= []).push(num); if (s.recentSent.length > 120) s.recentSent.shift();
   console.log(`[wa] tenant ${tid}: contact ${num} ${have ? `«${have}» → ` : 'new → '}«${full}»${it.r ? ' (again: your phone had not confirmed it)' : ''}`);
   return 'sent';
 }
