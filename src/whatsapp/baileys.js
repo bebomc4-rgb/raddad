@@ -565,7 +565,7 @@ export function contactsDiag(tenantId) {
   const probe = {}; for (const n of PROBE) { const k = pre + n; let db = null; try { db = q.all('SELECT jid, phone, name, last_at FROM contacts WHERE tenant_id = ? AND (phone = ? OR jid LIKE ?)', tenantId, n, '%' + n.slice(-8) + '%'); } catch {} probe[n] = { real: realNames[k] || '', book: book[k] || '', saved: saved[k] || '', lid: !!blid[k], queue: cq[k] || null, db, log: lines.filter(l => l.includes(n.slice(-9))).slice(-15).map(l => l.slice(0, 220)) }; }
   return { svc, active: (() => { try { return isActive(); } catch { return null; } })(), frozen: (() => { try { return frozen(); } catch { return null; } })(), bookReady: bookReady(tenantId), book: cnt(book), saved: cnt(saved), withLid: Object.keys(blid).filter(k => k.startsWith(pre) && blid[k]).length, latinBot: Object.keys(book).filter(k => k.startsWith(pre) && saved[k] === book[k] && /[A-Za-z@_]/.test(book[k])).length, botNoLid: Object.keys(book).filter(k => k.startsWith(pre) && saved[k] === book[k] && !blid[k]).length, realNames: cnt(realNames), queue, stateDirty: !!s?.stateDirty, lastPull: s?.lastPullInfo || null, wa: s?.status || null, lastSyncErr: s?.lastSyncErr || null,
     rejected24h: lines.filter(l => l.includes('REJECTED a contacts change') || l.includes('WhatsApp rejected «')).length, probe,
-    phone: { ab: s?.ab || null, wo: s?.wo || null, waOnlyMode: waOnlyMode(s), refused: Object.keys(abNo).filter(k => k.startsWith(pre)).length, whatsappOnly: Object.keys(wa1).filter(k => k.startsWith(pre)).length, removedWo: Object.keys(woRm).filter(k => k.startsWith(pre)).length, probeAt: s?.abProbeAt || 0 },
+    phone: { variants: s?.var || null, ab: s?.ab || null, wo: s?.wo || null, waOnlyMode: waOnlyMode(s), refused: Object.keys(abNo).filter(k => k.startsWith(pre)).length, whatsappOnly: Object.keys(wa1).filter(k => k.startsWith(pre)).length, removedWo: Object.keys(woRm).filter(k => k.startsWith(pre)).length, probeAt: s?.abProbeAt || 0 },
     keys: (() => { const out = { mine: String(s?.sock?.authState?.creds?.myAppStateKeyId || ''), phone: s?.phoneKey || '', phoneV: s?.phoneKeyV || 0, files: [] };
       try { for (const f of fs.readdirSync(authDir(tenantId))) { if (!f.startsWith('app-state-sync-key-')) continue; let j = {}; try { j = JSON.parse(fs.readFileSync(path.join(authDir(tenantId), f), 'utf8')); } catch {} const st = fs.statSync(path.join(authDir(tenantId), f));
         out.files.push({ id: f.slice(19, -5), mtime: st.mtime.toISOString(), ts: String(j.timestamp ?? ''), fp: j.fingerprint ? { raw: j.fingerprint.rawId, cur: j.fingerprint.currentIndex, dev: j.fingerprint.deviceIndexes } : null }); } } catch {}
@@ -890,7 +890,7 @@ const tried = {}; // الاسم يلي عم نحاول نحطّو هلق (إذا
 // سجل التغييرات بجهات الاتصال (من ردود الواتس نفسها): مين غيّر (رقم الجهاز: 0 = الموبايل) وشو (حفظ/حذف). للتشخيص
 // شو عمل الموبايل بجهة الاتصال يلي حطّها البوت (من 23/11/2026 الموبايل عم يمسح كل رقم جديد بيحطّو البوت بدفتر عناوينو)
 const AB_NO_FILE = path.join(DATA_DIR, 'contacts-phone-refused.json'), WA1_FILE = path.join(DATA_DIR, 'contacts-whatsapp-only.json');
-let abNo = readJsonSafe(AB_NO_FILE), wa1 = readJsonSafe(WA1_FILE), woRm = {}; // abNo: الموبايل رفض يحطّو بدفترو | wa1: انحفظ «بالواتس بس» | woRm: الموبايل مسحو حتى «بالواتس بس»
+let abNo = readJsonSafe(AB_NO_FILE), wa1 = {}, woRm = {}; // (24/11: «بالواتس بس» جرّبناها والموبايل مسحها كمان، فما عاد منستعملها) // abNo: الموبايل رفض يحطّو بدفترو | wa1: انحفظ «بالواتس بس» | woRm: الموبايل مسحو حتى «بالواتس بس»
 let abT = null; function keepAb() { clearTimeout(abT); abT = setTimeout(() => { try { writeJsonSafe(AB_NO_FILE, abNo); writeJsonSafe(WA1_FILE, wa1); } catch {} }, 2000); }
 const lastOp = new Map(); // «مشترك:رقم» → آخر تغيير { v, d, op, sp, l }
 const waOnlyMode = (s) => (s?.ab?.refused || 0) >= 3; // الموبايل رفض آخر 3 (أو أكتر) ورا بعض: الجديد بينحفظ «بالواتس بس»
@@ -901,6 +901,7 @@ function phoneReact(tid, s, ph, d, v, f, live) {
   if (live && d >= 0) { if (f.op === 'RM') { delete book[key]; delete blid[key]; } else if (f.n) { book[key] = f.n; blid[key] = !!f.l; } keepBook(); keepBlid(); }
   if (d !== 0 || !prev || prev.d !== -1 || prev.op !== 'SET') return; // بس ردّ الموبايل على حفظ البوت
   s.ab ||= { refused: 0, ok: 0, okV: 0 }; s.wo ||= { kept: 0, removed: 0 };
+  { const vk = (prev.sp ? 'book' : 'whatsapp') + (prev.lj ? '+lid' : '') + (prev.ins ? ':new' : ':edit'), r = f.op === 'RM' ? 'deleted' : f.l ? 'saved' : 'kept'; ((s.var ||= {})[vk] ||= { saved: 0, kept: 0, deleted: 0 })[r]++; }
   if (prev.sp) {
     if (f.op === 'SET' && f.l) { if (prev.ins) { s.ab.refused = 0; s.ab.ok++; s.ab.okV = v; } delete abNo[key]; keepAb(); }
     else { if (prev.ins) s.ab.refused++; abNo[key] = 1; keepAb(); if (live && (s.refLog = (s.refLog || 0) + 1) <= 200) console.error(`[wa] tenant ${tid}: your phone did not take contact ${ph} into its address book (${f.op === 'RM' ? 'deleted it' : 'kept it without saving'}) — saving it as a WhatsApp contact`); }
@@ -1073,25 +1074,19 @@ async function saveCore(tid, num, it) {
   else full = real ? uniqueName(tid, real, num, false) : uniqueName(tid, prefixOf(tid) + ' ' + num.slice(-4), num, true);
   if (full === have && !it.r) return 'skip';
   const jid = num + '@s.whatsapp.net';
-  if (woRm[key] && Date.now() - woRm[key] < 24 * 3600_000) return 'later'; // الموبايل مسحها حتى «بالواتس بس»: منرجع نجرّب بكرا
-  const inBook = !!have && !!blid[key]; // موجودة بدفتر الموبايل (مأكّدة)
-  const probe = !inBook && waOnlyMode(s) && !have && Date.now() - (s.abProbeAt || 0) > 6 * 3600_000; // كل 6 ساعات منجرّب إذا الموبايل رجع ياخد أرقام جديدة
-  const wo = !inBook && !probe && (!!abNo[key] || !!wa1[key] || waOnlyMode(s));
-  if (probe) s.abProbeAt = Date.now();
-  let rmFirst = false;
-  // تعديل ما ثبت 3 مرات، أو جهة اتصال حطّها البوت والموبايل ما أكّدها بعد مرة: منشيلها ومنرجع نحفظها جديدة (الموبايل بيعاملها جديدة)
-  if (!wo && have && ((full !== have && (it.t || 0) >= 3) || (full === have && botOwned && (it.t || 0) >= 1))) {
-    try { await contactPatch(tid, (sock) => sock.removeContact(jid), 'remove ' + num); lastOp.set(key, { v: s.lastPatchV || 0, d: -1, op: 'RM', sp: 0, l: 0 }); rmFirst = true; console.log(`[wa] tenant ${tid}: contact ${num} «${have}» removed to save it again`); await sleep(3000); } catch (e) { console.error(`[wa] tenant ${tid}: remove contact ${num}`, e.message); }
-  }
+  const rmFirst = false;
+  // معرّف lid تبع الرقم: الموبايل بيحفظ جهات الاتصال معو، فمنبعتو متلو (24/11/2026)
+  let lidJid = ''; try { const l = await Promise.race([s.sock.signalRepository?.lidMapping?.getLIDForPN?.(jid), sleep(15_000).then(() => null)]); if (typeof l === 'string' && /@lid$/.test(l)) lidJid = l.replace(/:\d+@/, '@'); } catch {}
+  // (الشيل والحفظ من جديد انلغى: الموبايل عم يمسح كل جديد، والشيل بس بيزيد المسح)
   tried[key] = full;
-  try { await contactPatch(tid, (sock) => sock.addOrEditContact(jid, { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: !wo }), 'save ' + num); }
+  const ca = { fullName: full, firstName: full.split(' ')[0], saveOnPrimaryAddressbook: true }; if (lidJid) ca.lidJid = lidJid;
+  try { await contactPatch(tid, (sock) => sock.addOrEditContact(jid, ca), 'save ' + num); }
   finally { delete tried[key]; }
-  lastOp.set(key, { v: s.lastPatchV || 0, d: -1, op: 'SET', sp: wo ? 0 : 1, l: 0, ins: !have || rmFirst ? 1 : 0 });
-  if (wo) wa1[key] = 1; else delete wa1[key]; keepAb();
+  lastOp.set(key, { v: s.lastPatchV || 0, d: -1, op: 'SET', sp: 1, l: 0, lj: lidJid ? 1 : 0, ins: !have || rmFirst ? 1 : 0 });
   if (ownerName) delete saved[key]; else saved[key] = full; // اسم إنت حاطّو (رجّعناه): ما بيصير «تبع البوت»، فما منشيلو ولا منغيّرو أبداً
   book[key] = full; blid[key] = false; keepBook(); keepBlid();
   (s.recentSent ||= []).push(num); if (s.recentSent.length > 120) s.recentSent.shift();
-  console.log(`[wa] tenant ${tid}: contact ${num} ${have ? `«${have}» → ` : 'new → '}«${full}»${wo ? ' [WhatsApp contact]' : probe ? ' [trying your phone address book]' : ''}${it.r ? ' (again: your phone had not confirmed it)' : ''}`);
+  console.log(`[wa] tenant ${tid}: contact ${num} ${have ? `«${have}» → ` : 'new → '}«${full}»${lidJid ? ' [with lid]' : ' [no lid known]'}${it.r ? ' (again: your phone had not confirmed it)' : ''}`);
   return 'sent';
 }
 // قديش منستنّى تأكيد الموبايل قبل ما نعيد: 10 دقايق، وبعدين 20، 40… (لحد ساعتين) — الموبايل ممكن يكون مسكّر
